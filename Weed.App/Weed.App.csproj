@@ -1,0 +1,40 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\Weed.Abstractions\Weed.Abstractions.csproj" />
+    <ProjectReference Include="..\Weed.Core\Weed.Core.csproj" />
+    <ProjectReference Include="..\Weed.PluginHost\Weed.PluginHost.csproj" />
+    <ProjectReference Include="..\Weed.Platform.Windows\Weed.Platform.Windows.csproj" />
+    <ProjectReference Include="..\plugins\Weed.Plugins.AppLauncher\Weed.Plugins.AppLauncher.csproj" />
+    <ProjectReference Include="..\plugins\Weed.Plugins.Calculator\Weed.Plugins.Calculator.csproj" />
+    <ProjectReference Include="..\plugins\Weed.Plugins.Clipboard\Weed.Plugins.Clipboard.csproj" />
+    <ProjectReference Include="..\plugins\Weed.Plugins.RunCommand\Weed.Plugins.RunCommand.csproj" />
+    <ProjectReference Include="..\plugins\Weed.Plugins.Screenshot\Weed.Plugins.Screenshot.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <Version>0.1.0</Version>
+    <AssemblyVersion>0.1.0.0</AssemblyVersion>
+    <FileVersion>0.1.0.0</FileVersion>
+    <ApplicationIcon>..\assets\app\weed.ico</ApplicationIcon>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Content Include="..\assets\**\*">
+      <Link>assets\%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="WPF-UI" Version="4.3.0" />
+  </ItemGroup>
+
+</Project>

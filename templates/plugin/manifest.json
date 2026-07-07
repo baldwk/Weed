@@ -1,0 +1,19 @@
+{
+  "id": "example.plugin",
+  "name": "Example Plugin",
+  "version": "0.1.0",
+  "sdkVersion": "0.1",
+  "assembly": "Example.Plugin.dll",
+  "entryType": "Example.Plugin.ExamplePlugin",
+  "runtime": {
+    "resident": false
+  },
+  "activations": [
+    {
+      "type": "keyword",
+      "keyword": "ex",
+      "command": "example.search"
+    }
+  ],
+  "permissions": []
+}

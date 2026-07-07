@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://weed.local/schemas/manifest.schema.json",
+  "title": "Weed Plugin Manifest",
+  "type": "object",
+  "required": ["id", "name", "version", "sdkVersion", "assembly", "entryType", "activations"],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_.-]+$"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "version": {
+      "type": "string"
+    },
+    "sdkVersion": {
+      "type": "string"
+    },
+    "assembly": {
+      "type": "string"
+    },
+    "entryType": {
+      "type": "string"
+    },
+    "icon": {
+      "type": "string"
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "resident": {
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "activations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["type"],
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "enum": ["keyword", "hotkey", "implicitQuery"]
+          },
+          "keyword": {
+            "type": "string"
+          },
+          "command": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "defaultKeys": {
+            "type": "string"
+          },
+          "configurable": {
+            "type": "boolean",
+            "default": true
+          },
+          "behavior": {
+            "enum": ["showLauncher", "showPluginPanel", "executeCommand"]
+          }
+        }
+      }
+    },
+    "permissions": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "storage.local",
+          "clipboard.read",
+          "clipboard.write",
+          "window.paste",
+          "shell.launch",
+          "screen.capture",
+          "file.read",
+          "file.write",
+          "network"
+        ]
+      }
+    }
+  }
+}
