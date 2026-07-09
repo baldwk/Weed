@@ -11,6 +11,7 @@ namespace Weed.Plugins.AppLauncher;
 public sealed class AppLauncherPlugin : IWeedPlugin, IQueryProvider, ICommandHandler, IPluginSettingsProvider
 {
     public const string PluginId = "weed.appLauncher";
+    private const string ShellAppsFolderPrefix = @"shell:AppsFolder\";
     private readonly List<AppEntry> _entries = [];
     private IWeedHost? _host;
     private string? _iconCacheDirectory;
@@ -50,7 +51,12 @@ public sealed class AppLauncherPlugin : IWeedPlugin, IQueryProvider, ICommandHan
         _iconCacheDirectory = Path.Combine(host.Storage.GetPluginCacheDirectory(PluginId), "icons");
         Directory.CreateDirectory(_iconCacheDirectory);
         LoadCache();
-        if (_entries.Count == 0)
+        if (PruneIndexedEntries())
+        {
+            _indexedAt = DateTimeOffset.MinValue;
+        }
+
+        if (_entries.Count == 0 || NeedsPackagedAppBackfill())
         {
             RefreshIndex();
         }
@@ -139,6 +145,7 @@ public sealed class AppLauncherPlugin : IWeedPlugin, IQueryProvider, ICommandHan
         context.Data.TryGetValue("targetPath", out var targetPath);
         context.Data.TryGetValue("arguments", out var arguments);
         context.Data.TryGetValue("workingDirectory", out var workingDirectory);
+        var isPackagedApp = IsShellAppsFolderPath(shortcutPath);
 
         switch (context.Command)
         {
@@ -146,6 +153,11 @@ public sealed class AppLauncherPlugin : IWeedPlugin, IQueryProvider, ICommandHan
                 await _host.Shell.OpenAsync(shortcutPath, cancellationToken);
                 return CommandResult.Ok(message: "Opened app.");
             case "app.openAdmin":
+                if (isPackagedApp)
+                {
+                    return CommandResult.Failed("Packaged apps cannot be opened as administrator from Weed.");
+                }
+
                 await _host.Shell.OpenAsAdministratorAsync(
                     string.IsNullOrWhiteSpace(targetPath) ? shortcutPath : targetPath,
                     arguments,
@@ -153,6 +165,11 @@ public sealed class AppLauncherPlugin : IWeedPlugin, IQueryProvider, ICommandHan
                     cancellationToken);
                 return CommandResult.Ok(message: "Opened app as administrator.");
             case "app.openLocation":
+                if (isPackagedApp)
+                {
+                    return CommandResult.Failed("Packaged app locations are managed by Windows.");
+                }
+
                 await _host.Shell.OpenContainingFolderAsync(
                     string.IsNullOrWhiteSpace(targetPath) ? shortcutPath : targetPath,
                     cancellationToken);
@@ -170,21 +187,37 @@ public sealed class AppLauncherPlugin : IWeedPlugin, IQueryProvider, ICommandHan
     private void RefreshIndex()
     {
         _entries.Clear();
+        var seenLaunchTargets = new HashSet<string>(StringComparer.Ordinal);
+        IndexStartMenuShortcuts(seenLaunchTargets);
+        IndexShellAppsFolder(seenLaunchTargets);
+
+        _indexedAt = DateTimeOffset.Now;
+        SaveCache();
+        _host?.Logger.Info($"Indexed {_entries.Count} applications.");
+    }
+
+    private void IndexStartMenuShortcuts(HashSet<string> seenLaunchTargets)
+    {
         var roots = new[]
         {
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonStartMenu), "Programs"),
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.StartMenu), "Programs")
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.StartMenu), "Programs"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonStartMenu), "Programs")
         };
 
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var seenShortcuts = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var root in roots.Where(Directory.Exists))
         {
             foreach (var file in Directory.EnumerateFiles(root, "*.*", SearchOption.AllDirectories)
                          .Where(path => path.EndsWith(".lnk", StringComparison.OrdinalIgnoreCase) ||
                                         path.EndsWith(".appref-ms", StringComparison.OrdinalIgnoreCase)))
             {
+                if (IsStartupShortcut(file))
+                {
+                    continue;
+                }
+
                 var name = Path.GetFileNameWithoutExtension(file);
-                if (!seen.Add(file) || string.IsNullOrWhiteSpace(name))
+                if (!seenShortcuts.Add(file) || string.IsNullOrWhiteSpace(name))
                 {
                     continue;
                 }
@@ -195,14 +228,60 @@ public sealed class AppLauncherPlugin : IWeedPlugin, IQueryProvider, ICommandHan
                     continue;
                 }
 
+                if (!seenLaunchTargets.Add(CreateLaunchIdentity(file, shortcut)))
+                {
+                    continue;
+                }
+
                 var iconPath = TryExtractIcon(file, shortcut?.TargetPath);
                 _entries.Add(CreateEntry(name, file, shortcut, iconPath));
             }
         }
+    }
 
-        _indexedAt = DateTimeOffset.Now;
-        SaveCache();
-        _host?.Logger.Info($"Indexed {_entries.Count} Start Menu shortcuts.");
+    private void IndexShellAppsFolder(HashSet<string> seenLaunchTargets)
+    {
+        foreach (var shellApp in EnumerateShellAppsFolderApps())
+        {
+            var entry = CreatePackagedAppEntry(shellApp.DisplayName, shellApp.AppUserModelId);
+            if (seenLaunchTargets.Add(CreateLaunchIdentity(entry.ShortcutPath, null)))
+            {
+                _entries.Add(entry);
+            }
+        }
+    }
+
+    private bool PruneIndexedEntries()
+    {
+        var seenLaunchTargets = new HashSet<string>(StringComparer.Ordinal);
+        var pruned = new List<AppEntry>(_entries.Count);
+        foreach (var entry in _entries)
+        {
+            if (IsStartupShortcut(entry.ShortcutPath))
+            {
+                continue;
+            }
+
+            var identity = CreateLaunchIdentity(entry.ShortcutPath, new ShortcutInfo
+            {
+                TargetPath = entry.TargetPath,
+                Arguments = entry.Arguments,
+                WorkingDirectory = entry.WorkingDirectory
+            });
+            if (seenLaunchTargets.Add(identity))
+            {
+                pruned.Add(entry);
+            }
+        }
+
+        if (pruned.Count == _entries.Count)
+        {
+            return false;
+        }
+
+        _entries.Clear();
+        _entries.AddRange(pruned);
+        return true;
     }
 
     private void LoadCache()
@@ -245,7 +324,7 @@ public sealed class AppLauncherPlugin : IWeedPlugin, IQueryProvider, ICommandHan
             }
 
             _indexedAt = _entries.Count == 0 ? DateTimeOffset.MinValue : _entries.Max(entry => entry.IndexedAt);
-            _host?.Logger.Info($"Loaded {_entries.Count} cached Start Menu shortcuts.");
+            _host?.Logger.Info($"Loaded {_entries.Count} cached applications.");
         }
         catch (Exception ex)
         {
@@ -364,6 +443,54 @@ public sealed class AppLauncherPlugin : IWeedPlugin, IQueryProvider, ICommandHan
         };
     }
 
+    public static AppEntry CreatePackagedAppEntry(string displayName, string appUserModelId)
+    {
+        var normalizedAppId = NormalizeShellAppsFolderId(appUserModelId);
+        var normalized = Normalize(displayName);
+        var pinyin = ToPinyin(displayName);
+        return new AppEntry
+        {
+            Id = $"appx-{TextId(displayName)}-{StableHash(normalizedAppId)[..12]}",
+            DisplayName = displayName,
+            NormalizedName = normalized,
+            Pinyin = pinyin,
+            PinyinInitials = ToPinyinInitials(displayName),
+            Acronym = Acronym(displayName),
+            ShortcutPath = ToShellAppsFolderPath(normalizedAppId),
+            IndexedAt = DateTimeOffset.Now
+        };
+    }
+
+    public static string CreateLaunchIdentity(string shortcutPath, ShortcutInfo? shortcut)
+    {
+        var appUserModelId = TryExtractShellAppsFolderId(shortcutPath) ??
+                             TryExtractShellAppsFolderId(shortcut?.Arguments);
+        if (!string.IsNullOrWhiteSpace(appUserModelId))
+        {
+            return $"appx:{appUserModelId.ToUpperInvariant()}";
+        }
+
+        if (!string.IsNullOrWhiteSpace(shortcut?.TargetPath))
+        {
+            return $"target:{NormalizeIdentityPath(shortcut.TargetPath)}\nargs:{(shortcut.Arguments ?? string.Empty).Trim()}";
+        }
+
+        return $"shortcut:{NormalizeIdentityPath(shortcutPath)}";
+    }
+
+    public static bool IsStartupShortcut(string shortcutPath)
+    {
+        var startupDirectories = new[]
+        {
+            Environment.GetFolderPath(Environment.SpecialFolder.Startup),
+            Environment.GetFolderPath(Environment.SpecialFolder.CommonStartup)
+        };
+
+        return startupDirectories
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Any(path => IsUnderDirectory(shortcutPath, path));
+    }
+
     public static bool ShouldIndexEntry(
         string displayName,
         string shortcutPath,
@@ -456,6 +583,7 @@ public sealed class AppLauncherPlugin : IWeedPlugin, IQueryProvider, ICommandHan
 
     private WeedResult ToResult(AppEntry entry, double score)
     {
+        var isPackagedApp = IsShellAppsFolderPath(entry.ShortcutPath);
         var data = new Dictionary<string, string>
         {
             ["shortcutPath"] = entry.ShortcutPath
@@ -463,23 +591,34 @@ public sealed class AppLauncherPlugin : IWeedPlugin, IQueryProvider, ICommandHan
         AddIfNotNull(data, "targetPath", entry.TargetPath);
         AddIfNotNull(data, "arguments", entry.Arguments);
         AddIfNotNull(data, "workingDirectory", entry.WorkingDirectory);
+        AddIfNotNull(data, "appUserModelId", TryExtractShellAppsFolderId(entry.ShortcutPath));
+
+        WeedAction[] actions = isPackagedApp
+            ?
+            [
+                new WeedAction { Command = "app.open", Title = "Open", Shortcut = "Enter" },
+                new WeedAction { Command = "app.copyPath", Title = "Copy app ID" }
+            ]
+            :
+            [
+                new WeedAction { Command = "app.open", Title = "Open", Shortcut = "Enter" },
+                new WeedAction { Command = "app.openAdmin", Title = "Run as administrator" },
+                new WeedAction { Command = "app.openLocation", Title = "Open location" },
+                new WeedAction { Command = "app.copyPath", Title = "Copy path" }
+            ];
 
         return new WeedResult
         {
             Id = entry.Id,
             PluginId = PluginId,
             Title = entry.DisplayName,
-            Subtitle = string.IsNullOrWhiteSpace(entry.TargetPath) ? entry.ShortcutPath : entry.TargetPath,
+            Subtitle = isPackagedApp
+                ? "Windows app"
+                : string.IsNullOrWhiteSpace(entry.TargetPath) ? entry.ShortcutPath : entry.TargetPath,
             Icon = string.IsNullOrWhiteSpace(entry.IconPath) ? WeedIcon.FromPath(PluginIconPath()) : WeedIcon.FromPath(entry.IconPath),
             MatchScore = Math.Clamp(score, 1, 30),
             DefaultCommand = "app.open",
-            Actions =
-            [
-                new WeedAction { Command = "app.open", Title = "Open", Shortcut = "Enter" },
-                new WeedAction { Command = "app.openAdmin", Title = "Run as administrator" },
-                new WeedAction { Command = "app.openLocation", Title = "Open location" },
-                new WeedAction { Command = "app.copyPath", Title = "Copy path" }
-            ],
+            Actions = actions,
             Data = data
         };
     }
@@ -523,6 +662,137 @@ public sealed class AppLauncherPlugin : IWeedPlugin, IQueryProvider, ICommandHan
 
     private bool HideMaintenanceShortcuts() =>
         _host?.Settings.GetPluginSetting(PluginId, "hideMaintenanceShortcuts", true) ?? true;
+
+    private bool NeedsPackagedAppBackfill() =>
+        !_entries.Any(entry => IsShellAppsFolderPath(entry.ShortcutPath));
+
+    private static IReadOnlyList<ShellAppInfo> EnumerateShellAppsFolderApps()
+    {
+        var apps = new List<ShellAppInfo>();
+        object? shellObject = null;
+        object? folderObject = null;
+        object? itemsObject = null;
+        try
+        {
+            var shellType = Type.GetTypeFromProgID("Shell.Application");
+            if (shellType is null)
+            {
+                return apps;
+            }
+
+            shellObject = Activator.CreateInstance(shellType);
+            if (shellObject is null)
+            {
+                return apps;
+            }
+
+            dynamic shell = shellObject;
+            folderObject = shell.Namespace("shell:AppsFolder");
+            if (folderObject is null)
+            {
+                return apps;
+            }
+
+            dynamic folder = folderObject;
+            itemsObject = folder.Items();
+            if (itemsObject is null)
+            {
+                return apps;
+            }
+
+            dynamic items = itemsObject;
+            var count = (int)items.Count;
+            for (var i = 0; i < count; i++)
+            {
+                object? itemObject = null;
+                try
+                {
+                    itemObject = items.Item(i);
+                    if (itemObject is null)
+                    {
+                        continue;
+                    }
+
+                    dynamic item = itemObject;
+                    var displayName = Convert.ToString(item.Name)?.Trim();
+                    var appUserModelId = NormalizeShellAppsFolderId(Convert.ToString(item.Path) ?? string.Empty);
+                    if (string.IsNullOrWhiteSpace(displayName) ||
+                        string.IsNullOrWhiteSpace(appUserModelId) ||
+                        !appUserModelId.Contains('!', StringComparison.Ordinal))
+                    {
+                        continue;
+                    }
+
+                    apps.Add(new ShellAppInfo(displayName, appUserModelId));
+                }
+                catch
+                {
+                    // Some shell namespace items do not expose every property; skip those.
+                }
+                finally
+                {
+                    ReleaseComObject(itemObject);
+                }
+            }
+        }
+        catch
+        {
+            return apps;
+        }
+        finally
+        {
+            ReleaseComObject(itemsObject);
+            ReleaseComObject(folderObject);
+            ReleaseComObject(shellObject);
+        }
+
+        return apps;
+    }
+
+    private static string ToShellAppsFolderPath(string appUserModelId) =>
+        string.Concat(ShellAppsFolderPrefix, NormalizeShellAppsFolderId(appUserModelId));
+
+    private static bool IsShellAppsFolderPath(string value) =>
+        value.Trim().StartsWith(ShellAppsFolderPrefix, StringComparison.OrdinalIgnoreCase);
+
+    private static string NormalizeShellAppsFolderId(string value)
+    {
+        var trimmed = value.Trim().Trim('"');
+        return trimmed.StartsWith(ShellAppsFolderPrefix, StringComparison.OrdinalIgnoreCase)
+            ? trimmed[ShellAppsFolderPrefix.Length..]
+            : trimmed;
+    }
+
+    private static string? TryExtractShellAppsFolderId(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var index = value.IndexOf(ShellAppsFolderPrefix, StringComparison.OrdinalIgnoreCase);
+        if (index < 0)
+        {
+            return null;
+        }
+
+        var appUserModelId = value[(index + ShellAppsFolderPrefix.Length)..].Trim().Trim('"');
+        var separatorIndex = appUserModelId.IndexOfAny(['"', ' ', '\t', '\r', '\n']);
+        if (separatorIndex >= 0)
+        {
+            appUserModelId = appUserModelId[..separatorIndex];
+        }
+
+        return string.IsNullOrWhiteSpace(appUserModelId) ? null : appUserModelId;
+    }
+
+    private static void ReleaseComObject(object? value)
+    {
+        if (value is not null && Marshal.IsComObject(value))
+        {
+            Marshal.FinalReleaseComObject(value);
+        }
+    }
 
     private static bool LooksLikeMaintenanceName(string? name)
     {
@@ -607,6 +877,42 @@ public sealed class AppLauncherPlugin : IWeedPlugin, IQueryProvider, ICommandHan
         query.Equals("app refresh", StringComparison.OrdinalIgnoreCase) ||
         query.Equals("apps refresh", StringComparison.OrdinalIgnoreCase);
 
+    private static string NormalizeIdentityPath(string path)
+    {
+        var normalized = path.Trim();
+        try
+        {
+            if (Path.IsPathRooted(normalized))
+            {
+                normalized = Path.GetFullPath(normalized);
+            }
+        }
+        catch
+        {
+        }
+
+        return normalized
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            .ToUpperInvariant();
+    }
+
+    private static bool IsUnderDirectory(string path, string directory)
+    {
+        try
+        {
+            var fullPath = EnsureTrailingDirectorySeparator(Path.GetFullPath(path));
+            var fullDirectory = EnsureTrailingDirectorySeparator(Path.GetFullPath(directory));
+            return fullPath.StartsWith(fullDirectory, StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static string EnsureTrailingDirectorySeparator(string path) =>
+        path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+
     private static string Normalize(string text) =>
         string.Join(' ', text.Trim().ToLowerInvariant().Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
 
@@ -664,6 +970,8 @@ public sealed class AppLauncherPlugin : IWeedPlugin, IQueryProvider, ICommandHan
             data[key] = value;
         }
     }
+
+    private sealed record ShellAppInfo(string DisplayName, string AppUserModelId);
 }
 
 public sealed record AppEntry

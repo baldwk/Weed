@@ -17,6 +17,9 @@ public sealed record WeedAppSettings
 
     public string UpdateManifestUrl { get; init; } = string.Empty;
 
+    public string ExternalPluginRegistryUrl { get; init; } =
+        "https://raw.githubusercontent.com/wky/Weed/master/plugins.registry.json";
+
     public string MainHotkey { get; init; } = "Alt+Space";
 
     public bool CloseOnLostFocus { get; init; } = true;
@@ -82,11 +85,12 @@ public sealed class AppPaths
 
     public string UsageFile => Path.Combine(LocalDataRoot, "usage-history.json");
 
-    public string PluginSettingsFile => Path.Combine(AppDataRoot, "plugin-settings.json");
+    public string PluginSettingsDirectory => Path.Combine(AppDataRoot, "plugin-settings");
 
     public void EnsureDirectories()
     {
         Directory.CreateDirectory(AppDataRoot);
+        Directory.CreateDirectory(PluginSettingsDirectory);
         Directory.CreateDirectory(LocalDataRoot);
         Directory.CreateDirectory(Logs);
         Directory.CreateDirectory(Plugins);
@@ -131,7 +135,7 @@ public sealed class SettingsRepository : IWeedSettings, IWeedStorage
         AppSettings = ReadJson(Paths.SettingsFile, new WeedAppSettings());
         Hotkeys = ReadJson(Paths.HotkeysFile, new Dictionary<string, HotkeyUserSetting>());
         Plugins = ReadJson(Paths.PluginsFile, new Dictionary<string, PluginUserSetting>());
-        _pluginSettings = ReadJson(Paths.PluginSettingsFile, new Dictionary<string, Dictionary<string, JsonElement>>());
+        _pluginSettings = ReadPluginSettings();
         SaveDefaultsIfMissing();
         Save();
     }
@@ -141,7 +145,7 @@ public sealed class SettingsRepository : IWeedSettings, IWeedStorage
         WriteJson(Paths.SettingsFile, AppSettings);
         WriteJson(Paths.HotkeysFile, Hotkeys);
         WriteJson(Paths.PluginsFile, Plugins);
-        WriteJson(Paths.PluginSettingsFile, _pluginSettings);
+        WritePluginSettings();
     }
 
     public void SetAppSettings(WeedAppSettings settings)
@@ -284,6 +288,43 @@ public sealed class SettingsRepository : IWeedSettings, IWeedStorage
 
         return value;
     }
+
+    private Dictionary<string, Dictionary<string, JsonElement>> ReadPluginSettings()
+    {
+        var pluginSettings = new Dictionary<string, Dictionary<string, JsonElement>>();
+
+        if (!Directory.Exists(Paths.PluginSettingsDirectory))
+        {
+            Directory.CreateDirectory(Paths.PluginSettingsDirectory);
+            return pluginSettings;
+        }
+
+        foreach (var path in Directory.EnumerateFiles(Paths.PluginSettingsDirectory, "*.json", SearchOption.TopDirectoryOnly))
+        {
+            var pluginId = Path.GetFileNameWithoutExtension(path);
+            if (string.IsNullOrWhiteSpace(pluginId))
+            {
+                continue;
+            }
+
+            var settings = ReadJson(path, new Dictionary<string, JsonElement>());
+            pluginSettings[pluginId] = settings;
+        }
+
+        return pluginSettings;
+    }
+
+    private void WritePluginSettings()
+    {
+        Directory.CreateDirectory(Paths.PluginSettingsDirectory);
+        foreach (var (pluginId, settings) in _pluginSettings)
+        {
+            WriteJson(PluginSettingsPath(pluginId), settings);
+        }
+    }
+
+    private string PluginSettingsPath(string pluginId) =>
+        Path.Combine(Paths.PluginSettingsDirectory, $"{Sanitize(pluginId)}.json");
 
     private static T ReadJson<T>(string path, T fallback)
     {

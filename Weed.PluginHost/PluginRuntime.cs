@@ -47,6 +47,11 @@ public sealed class PluginRuntime : IAsyncDisposable
         foreach (var manifestPath in Directory.EnumerateFiles(pluginsDirectory, "manifest.json", SearchOption.AllDirectories))
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (IsIgnoredPluginPath(pluginsDirectory, manifestPath))
+            {
+                continue;
+            }
+
             try
             {
                 var manifest = JsonSerializer.Deserialize<WeedPluginManifest>(
@@ -66,7 +71,7 @@ public sealed class PluginRuntime : IAsyncDisposable
                     continue;
                 }
 
-                var context = new PluginLoadContext(pluginDirectory);
+                var context = new PluginLoadContext(assemblyPath);
                 var assembly = context.LoadFromAssemblyPath(assemblyPath);
                 var type = assembly.GetType(manifest.EntryType, throwOnError: true);
                 if (type is null || !typeof(IWeedPlugin).IsAssignableFrom(type))
@@ -148,16 +153,25 @@ public sealed class PluginRuntime : IAsyncDisposable
         plugin as IQueryProvider,
         plugin as ICommandHandler,
         plugin as IResidentPlugin);
+
+    private static bool IsIgnoredPluginPath(string pluginsDirectory, string manifestPath)
+    {
+        var relative = Path.GetRelativePath(pluginsDirectory, manifestPath);
+        var parts = relative.Split(
+            [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
+            StringSplitOptions.RemoveEmptyEntries);
+        return parts.Any(part => part.StartsWith(".", StringComparison.Ordinal));
+    }
 }
 
 internal sealed class PluginLoadContext : AssemblyLoadContext
 {
     private readonly AssemblyDependencyResolver _resolver;
 
-    public PluginLoadContext(string pluginPath)
+    public PluginLoadContext(string pluginAssemblyPath)
         : base(isCollectible: true)
     {
-        _resolver = new AssemblyDependencyResolver(pluginPath);
+        _resolver = new AssemblyDependencyResolver(pluginAssemblyPath);
     }
 
     protected override Assembly? Load(AssemblyName assemblyName)
@@ -169,5 +183,11 @@ internal sealed class PluginLoadContext : AssemblyLoadContext
 
         var assemblyPath = _resolver.ResolveAssemblyToPath(assemblyName);
         return assemblyPath is null ? null : LoadFromAssemblyPath(assemblyPath);
+    }
+
+    protected override nint LoadUnmanagedDll(string unmanagedDllName)
+    {
+        var libraryPath = _resolver.ResolveUnmanagedDllToPath(unmanagedDllName);
+        return libraryPath is null ? 0 : LoadUnmanagedDllFromPath(libraryPath);
     }
 }

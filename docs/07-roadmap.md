@@ -207,3 +207,23 @@
 - Windows 10 上完成核心工作流。
 - 日常操作稳定。
 - 首批用户可以通过文档开发插件。
+
+## Post-MVP: 后续第一方插件扩展
+
+目标：在 MVP 稳定后补充高频效率插件，不改变 MVP 已实现范围。
+
+交付：
+
+- Emoji Search 插件：通过 `emoji` keyword 搜索内置 emoji 名称、别名、分类和 shortcode。
+- Translator 插件：通过 `tr` 和 `translate` keyword 调用免费或免费额度翻译 provider，支持 Google Translate、Baidu Translate（百度翻译）、默认语言、查询延迟和代理配置。
+- File Search 插件：通过 `file` keyword 和 Everything SDK 查询 Everything 本地索引，不在 Weed 内自建全盘文件索引。
+- 三个插件均使用现有 Keyword、QueryProvider、CommandHandler 和插件自有设置能力。
+
+验收：
+
+- `emoji smile` 能返回相关 emoji，回车复制 emoji 到剪切板。
+- `tr en zh hello` 能返回中文译文，回车复制译文到剪切板。
+- Translator 在 provider 限额、网络失败或代理错误时展示明确错误结果并写入插件日志。
+- `file report` 能通过 Everything 返回文件或文件夹结果。
+- File Search 在 Everything 未安装或未运行时展示诊断结果。
+- 三个插件的启用状态、权限、日志和插件设置可在设置页查看。

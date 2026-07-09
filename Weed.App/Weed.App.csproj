@@ -5,11 +5,14 @@
     <ProjectReference Include="..\Weed.Core\Weed.Core.csproj" />
     <ProjectReference Include="..\Weed.PluginHost\Weed.PluginHost.csproj" />
     <ProjectReference Include="..\Weed.Platform.Windows\Weed.Platform.Windows.csproj" />
-    <ProjectReference Include="..\plugins\Weed.Plugins.AppLauncher\Weed.Plugins.AppLauncher.csproj" />
-    <ProjectReference Include="..\plugins\Weed.Plugins.Calculator\Weed.Plugins.Calculator.csproj" />
-    <ProjectReference Include="..\plugins\Weed.Plugins.Clipboard\Weed.Plugins.Clipboard.csproj" />
-    <ProjectReference Include="..\plugins\Weed.Plugins.RunCommand\Weed.Plugins.RunCommand.csproj" />
-    <ProjectReference Include="..\plugins\Weed.Plugins.Screenshot\Weed.Plugins.Screenshot.csproj" />
+    <ProjectReference Include="..\Built-In Plugins\Weed.Plugins.AppLauncher\Weed.Plugins.AppLauncher.csproj" />
+    <ProjectReference Include="..\Built-In Plugins\Weed.Plugins.Calculator\Weed.Plugins.Calculator.csproj" />
+    <ProjectReference Include="..\Built-In Plugins\Weed.Plugins.Clipboard\Weed.Plugins.Clipboard.csproj" />
+    <ProjectReference Include="..\Built-In Plugins\Weed.Plugins.Emoji\Weed.Plugins.Emoji.csproj" />
+    <ProjectReference Include="..\Built-In Plugins\Weed.Plugins.FileSearch\Weed.Plugins.FileSearch.csproj" />
+    <ProjectReference Include="..\Built-In Plugins\Weed.Plugins.RunCommand\Weed.Plugins.RunCommand.csproj" />
+    <ProjectReference Include="..\Built-In Plugins\Weed.Plugins.Screenshot\Weed.Plugins.Screenshot.csproj" />
+    <ProjectReference Include="..\Built-In Plugins\Weed.Plugins.Translate\Weed.Plugins.Translate.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

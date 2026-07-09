@@ -11,6 +11,12 @@ MVP 第一方插件：
 
 第一方插件随 Weed 发布，默认启用，使用同一套 manifest、生命周期和结果模型。
 
+当前仓库还包含以下第一方扩展插件：
+
+- Emoji Search
+- Translator
+- File Search
+
 ## AppLauncher
 
 ### 入口
@@ -337,3 +343,178 @@ Open screenshot tool
 - JPEG。
 
 默认保存格式为 PNG。
+
+## Emoji Search
+
+Emoji Search 用于快速搜索并复制内置 emoji。
+
+### Manifest
+
+```json
+{
+  "id": "weed.emoji",
+  "activations": [
+    {
+      "type": "keyword",
+      "keyword": "emoji",
+      "command": "emoji.search"
+    }
+  ],
+  "permissions": [
+    "clipboard.write"
+  ]
+}
+```
+
+### 查询
+
+入口：
+
+```text
+emoji smile
+emoji rocket
+emoji heart
+```
+
+搜索能力：
+
+- 名称匹配。
+- 别名匹配。
+- 分类匹配。
+- shortcode 匹配。
+- 常用 emoji 排序。
+
+### 动作
+
+- 复制 emoji。
+- 复制 shortcode。
+- 复制 emoji 名称。
+
+默认动作是复制 emoji 到剪切板。
+
+## Translator
+
+Translator 用于通过免费或免费额度翻译接口进行快速翻译。
+
+### Manifest
+
+```json
+{
+  "id": "weed.translate",
+  "activations": [
+    {
+      "type": "keyword",
+      "keyword": "tr",
+      "command": "translate.search"
+    },
+    {
+      "type": "keyword",
+      "keyword": "translate",
+      "command": "translate.search"
+    }
+  ],
+  "permissions": [
+    "network",
+    "clipboard.write"
+  ]
+}
+```
+
+### 查询
+
+入口：
+
+```text
+tr hello
+tr en zh hello
+translate auto en 你好
+translate ja zh ありがとう
+```
+
+语法：
+
+- `tr text`: 使用默认源语言和目标语言，源语言默认自动检测。
+- `tr source target text`: 指定源语言和目标语言。
+- `translate source target text`: 完整命令别名。
+
+### Provider
+
+插件优先支持免费或免费额度 provider：
+
+- Google Translate。
+- Baidu Translate（百度翻译）。
+
+Provider 应可在设置页切换。需要凭据的 provider 通过插件设置保存 API 配置；无需凭据或用户自配端点的 provider 也应支持 base URL 配置。
+
+### 网络和代理
+
+Translator 支持代理配置：
+
+- `system`: 使用系统代理。
+- `none`: 不使用代理。
+- `custom`: 使用用户配置的代理地址。
+
+请求失败、接口限额、provider 不可用或代理错误时，结果列表展示可执行的错误结果，并在插件日志中记录原因。
+
+### 动作
+
+- 复制译文。
+- 复制原文和译文。
+- 交换源语言和目标语言后重新翻译。
+
+默认动作是复制译文到剪切板。
+
+## File Search
+
+File Search 用于通过 Everything 的本地索引快速搜索文件和文件夹。Weed 不自行递归扫描文件系统。
+
+### Manifest
+
+```json
+{
+  "id": "weed.fileSearch",
+  "activations": [
+    {
+      "type": "keyword",
+      "keyword": "file",
+      "command": "file.search"
+    }
+  ],
+  "permissions": [
+    "file.read",
+    "shell.launch"
+  ]
+}
+```
+
+### 依赖
+
+File Search 依赖 Everything 已安装并正在运行。插件通过 Everything SDK 查询现有索引，不建立 Weed 自有文件索引，也不要求用户输入 Everything 可执行文件路径。
+
+当 Everything 未安装、服务未运行或 API 不可用时，插件返回诊断结果，引导用户打开 Everything 或查看设置。
+
+### 查询
+
+入口：
+
+```text
+file report
+file *.pdf invoice
+file path:projects weed
+```
+
+搜索能力：
+
+- 文件名搜索。
+- 文件夹搜索。
+- Everything 查询语法透传。
+- 文件和文件夹类型过滤。
+- 最近打开结果排序。
+
+### 动作
+
+- 打开文件或文件夹。
+- 打开所在位置。
+- 复制路径。
+
+默认动作是打开选中项。

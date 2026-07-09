@@ -19,6 +19,14 @@ MVP 包含以下能力：
 - 第一方插件：AppLauncher、Calculator、Clipboard、Screenshot。
 - 插件开发基础文档、manifest schema 和 C# 插件模板。
 
+## 扩展插件
+
+当前仓库还包含更多第一方扩展插件：
+
+- Emoji Search：搜索并复制内置 emoji。
+- Translator：通过免费或免费额度 provider 进行翻译，支持 Google Translate、Baidu Translate（百度翻译）、查询延迟和代理配置。
+- File Search：基于 Everything 本地索引搜索文件和文件夹。
+
 ## 核心原则
 
 - Host 保持轻量，负责体验和调度。

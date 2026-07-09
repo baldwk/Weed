@@ -1,18 +1,21 @@
 # Weed Specification Index
 
-Weed 是 Windows 10+ 上的 Alfred 风格启动器和工作流工具。本文档集定义 MVP 的产品范围、系统设计、插件规范和开发路线。
+Weed is an Alfred-style launcher and workflow tool for Windows. These documents describe the MVP product scope,
+system design, plugin model, and development roadmap.
 
-## 文档列表
+## Documents
 
-- [00-overview.md](00-overview.md): 产品定位、MVP 范围、设计原则和关键术语。
-- [01-system-architecture.md](01-system-architecture.md): Host、Core、PluginHost、平台层和第一方插件的职责划分。
-- [02-plugin-system.md](02-plugin-system.md): managed DLL 插件规范、manifest、生命周期、权限、打包和版本兼容。
-- [03-query-routing-hotkeys.md](03-query-routing-hotkeys.md): Keyword、Hotkey、ImplicitQuery 三种入口，排序公式，历史分和快捷键配置。
-- [04-ui-ux.md](04-ui-ux.md): Alfred 风格 UI、主搜索窗、插件面板、设置页、键盘交互和主题规范。
-- [05-first-party-plugins.md](05-first-party-plugins.md): MVP 第一方插件规格：AppLauncher、Calculator、Clipboard、Screenshot。
-- [06-data-storage.md](06-data-storage.md): 配置、历史、索引、剪切板和大对象存储策略。
-- [07-roadmap.md](07-roadmap.md): 分阶段实施路线、验收标准和发布准备。
+- [00-overview.md](00-overview.md): product positioning, MVP scope, design principles, and terminology.
+- [01-system-architecture.md](01-system-architecture.md): Host, Core, PluginHost, platform layer, and first-party plugin responsibilities.
+- [02-plugin-system.md](02-plugin-system.md): managed DLL plugin contract, manifest, lifecycle, permissions, packaging, and compatibility.
+- [03-query-routing-hotkeys.md](03-query-routing-hotkeys.md): Keyword, Hotkey, ImplicitQuery, ranking, usage history, and shortcut settings.
+- [04-ui-ux.md](04-ui-ux.md): launcher UI, plugin panels, settings, keyboard interaction, and theme rules.
+- [05-first-party-plugins.md](05-first-party-plugins.md): first-party plugin specs and extension plugin specs.
+- [06-data-storage.md](06-data-storage.md): settings, history, indexes, clipboard objects, and plugin data storage.
+- [07-roadmap.md](07-roadmap.md): implementation phases, acceptance checks, and release preparation.
+- [08-external-plugins.md](08-external-plugins.md): external plugin development, packaging, import design, and OCR plugin example.
 
-## 状态
+## Status
 
-这些文档是 MVP 阶段的产品和技术规格。实现过程中如果 API、数据结构或交互细节发生变化，应同步更新对应 spec。
+These documents are the MVP-stage product and technical specs. When APIs, data structures, or interactions change,
+update the corresponding spec in the same change.

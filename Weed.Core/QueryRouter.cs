@@ -50,7 +50,7 @@ public sealed class QueryRouter
             return [];
         }
 
-        var keywordMatch = TryMatchKeyword(normalized);
+        var keywordMatch = TryMatchKeyword(rawText, normalized);
         if (keywordMatch is not null)
         {
             var (plugin, activation, remaining) = keywordMatch.Value;
@@ -135,11 +135,14 @@ public sealed class QueryRouter
         }, cancellationToken);
     }
 
-    private (LoadedPlugin Plugin, PluginActivationManifest Activation, (string Raw, string Normalized) Remaining)? TryMatchKeyword(string normalized)
+    private (LoadedPlugin Plugin, PluginActivationManifest Activation, (string Raw, string Normalized) Remaining)? TryMatchKeyword(string rawText, string normalized)
     {
         var firstSpace = normalized.IndexOf(' ');
         var first = firstSpace >= 0 ? normalized[..firstSpace] : normalized;
         var remainingNormalized = firstSpace >= 0 ? normalized[(firstSpace + 1)..].Trim() : string.Empty;
+        var rawTrimmed = rawText.Trim();
+        var rawFirstSpace = FirstWhiteSpaceIndex(rawTrimmed);
+        var remainingRaw = rawFirstSpace >= 0 ? rawTrimmed[(rawFirstSpace + 1)..].Trim() : string.Empty;
 
         foreach (var plugin in _plugins.Where(p => _settings.IsPluginEnabled(p.Manifest.Id)))
         {
@@ -150,14 +153,28 @@ public sealed class QueryRouter
                     continue;
                 }
 
-                if (TextNormalizer.Normalize(activation.Keyword).Equals(first, StringComparison.OrdinalIgnoreCase))
+                var effectiveKeyword = ActivationSettings.EffectiveKeyword(_settings, plugin.Manifest.Id, activation);
+                if (effectiveKeyword.Equals(first, StringComparison.OrdinalIgnoreCase))
                 {
-                    return (plugin, activation, (remainingNormalized, remainingNormalized));
+                    return (plugin, activation with { Keyword = effectiveKeyword }, (remainingRaw, remainingNormalized));
                 }
             }
         }
 
         return null;
+    }
+
+    private static int FirstWhiteSpaceIndex(string text)
+    {
+        for (var i = 0; i < text.Length; i++)
+        {
+            if (char.IsWhiteSpace(text[i]))
+            {
+                return i;
+            }
+        }
+
+        return -1;
     }
 
     private async ValueTask<IReadOnlyList<RankedResult>> QueryPluginAsync(

@@ -21,6 +21,9 @@
   settings.json
   hotkeys.json
   plugins.json
+  plugin-settings\
+    weed.translate.json
+    weed.fileSearch.json
 
 %LOCALAPPDATA%\Weed\
   weed.db
@@ -93,6 +96,56 @@ Weed 使用 SQLite，启用 WAL 模式。
 ```
 
 `priority` 只参与 ImplicitQuery 排序。
+
+### plugin-settings\<pluginId>.json
+
+保存插件自有设置。Host 只负责持久化和在设置页渲染插件声明的配置项，具体含义由插件定义。
+
+示例：
+
+`%APPDATA%\Weed\plugin-settings\weed.translate.json`
+
+```json
+{
+  "provider": "google",
+  "googleBaseUrl": "https://translate.googleapis.com",
+  "baiduAppId": "",
+  "baiduSecretKey": "",
+  "baiduBaseUrl": "https://fanyi-api.baidu.com/api/trans/vip/translate",
+  "defaultSourceLanguage": "auto",
+  "defaultTargetLanguage": "zh-CN",
+  "secondaryTargetLanguage": "en",
+  "queryDelayMilliseconds": 500,
+  "proxyMode": "system",
+  "proxyUrl": ""
+}
+```
+
+`%APPDATA%\Weed\plugin-settings\weed.fileSearch.json`
+
+```json
+{
+  "includeFolders": true,
+  "maxResults": 50
+}
+```
+
+`%APPDATA%\Weed\plugin-settings\weed.emoji.json`
+
+```json
+{
+  "maxResults": 30,
+  "copyFormat": "emoji"
+}
+```
+
+Translator 的 `provider` 可配置为 Google Translate、Baidu Translate（百度翻译）或后续扩展 provider。`proxyMode` 可取：
+
+- `system`: 使用系统代理。
+- `none`: 不使用代理。
+- `custom`: 使用 `proxyUrl`。
+
+Baidu Translate 凭据和自定义代理地址保存于用户本机配置文件。后续如引入系统凭据库，仍应保持插件读取设置的键名兼容。
 
 ## 用户历史
 

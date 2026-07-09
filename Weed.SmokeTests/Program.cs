@@ -1,12 +1,17 @@
+using System.IO.Compression;
 using Weed.Abstractions;
 using Weed.App;
 using Weed.Core;
+using Weed.PluginHost;
 using Weed.Platform.Windows;
 using Weed.Plugins.AppLauncher;
 using Weed.Plugins.Calculator;
 using Weed.Plugins.Clipboard;
+using Weed.Plugins.Emoji;
+using Weed.Plugins.FileSearch;
 using Weed.Plugins.RunCommand;
 using Weed.Plugins.Screenshot;
+using Weed.Plugins.Translate;
 using IQueryProvider = Weed.Abstractions.IQueryProvider;
 
 var root = Path.Combine(Path.GetTempPath(), "WeedSmoke", Guid.NewGuid().ToString("N"));
@@ -15,16 +20,29 @@ var settings = new SettingsRepository(paths);
 settings.Load();
 var logger = new ConsoleWeedLogger();
 var host = new SmokeHost(logger, settings);
+await VerifyExternalPluginImportAsync(root, paths);
 
 var plugins = new List<LoadedPlugin>();
 var appLauncherPlugin = new AppLauncherPlugin();
 var calculatorPlugin = new CalculatorPlugin();
 var clipboardPlugin = new ClipboardPlugin();
+var emojiPlugin = new EmojiPlugin();
+var translationClient = new SmokeTranslationClient();
+var translatePlugin = new TranslatePlugin(translationClient);
+var everythingClient = new SmokeEverythingSearchClient(
+[
+    new EverythingSearchResult(@"C:\Reports\Quarterly Report.pdf", FileSearchResultKind.File),
+    new EverythingSearchResult(@"C:\Reports", FileSearchResultKind.Folder)
+]);
+var fileSearchPlugin = new FileSearchPlugin(everythingClient);
 var runCommandPlugin = new RunCommandPlugin();
 var screenshotPlugin = new ScreenshotPlugin();
 await AddPluginAsync(AppLauncherPlugin.Manifest, appLauncherPlugin);
 await AddPluginAsync(CalculatorPlugin.Manifest, calculatorPlugin);
 await AddPluginAsync(ClipboardPlugin.Manifest, clipboardPlugin);
+await AddPluginAsync(EmojiPlugin.Manifest, emojiPlugin);
+await AddPluginAsync(TranslatePlugin.Manifest, translatePlugin);
+await AddPluginAsync(FileSearchPlugin.Manifest, fileSearchPlugin);
 await AddPluginAsync(RunCommandPlugin.Manifest, runCommandPlugin);
 await AddPluginAsync(ScreenshotPlugin.Manifest, screenshotPlugin);
 
@@ -33,6 +51,7 @@ var usage = new UsageHistoryStore(paths.DatabaseFile);
 usage.Load();
 var router = new QueryRouter(settings, usage);
 router.SetPlugins(plugins);
+settings.SetPluginSetting(TranslatePlugin.PluginId, "queryDelayMilliseconds", 0);
 
 var empty = await router.QueryAsync("", CancellationToken.None);
 Require(empty.Count == 0, "empty query should not show plugin startup results");
@@ -92,6 +111,78 @@ Require(regeditTarget is not null, "Run Command should return regedit");
 await router.ExecuteAsync(regeditTarget!.Result, regeditTarget.Result.DefaultCommand, CancellationToken.None);
 Require(host.Shell.OpenedPath == "regedit.exe", "Run Command should execute regedit through shell open");
 
+var emoji = await router.QueryAsync("emoji rocket", CancellationToken.None);
+var rocket = emoji.FirstOrDefault(r => r.Result.PluginId == EmojiPlugin.PluginId && r.Result.Data.TryGetValue("emoji", out var value) && value == "🚀");
+Require(rocket is not null, "Emoji Search should find rocket by name");
+var emojiCopy = await router.ExecuteAsync(rocket!.Result, rocket.Result.DefaultCommand, CancellationToken.None);
+Require(emojiCopy.Succeeded && host.Clipboard.Text == "🚀", "Emoji Search default action should copy the emoji");
+var heart = await router.QueryAsync("emoji heart", CancellationToken.None);
+Require(heart.Any(r => r.Result.PluginId == EmojiPlugin.PluginId && r.Result.Title.Contains("heart", StringComparison.OrdinalIgnoreCase)), "Emoji Search should match aliases and names");
+
+var translation = await router.QueryAsync("tr en zh HELLO Weed", CancellationToken.None);
+var translationTarget = translation.FirstOrDefault(r => r.Result.PluginId == TranslatePlugin.PluginId && r.Result.Title == "你好 Weed");
+Require(translationTarget is not null, "Translator should return a translated result");
+Require(translationClient.LastRequest?.Text == "HELLO Weed", "keyword routing should preserve raw translation casing");
+var translateCopy = await router.ExecuteAsync(translationTarget!.Result, translationTarget.Result.DefaultCommand, CancellationToken.None);
+Require(translateCopy.Succeeded && host.Clipboard.Text == "你好 Weed", "Translator default action should copy translated text");
+var translateSwap = await router.ExecuteAsync(translationTarget.Result, "translate.swap", CancellationToken.None);
+Require(translateSwap.Succeeded && translateSwap.Behavior == CommandBehavior.ShowLauncher && translateSwap.InitialQuery == "tr zh en HELLO Weed", "Translator should create a swapped launcher query");
+var translateAuto = await router.QueryAsync("translate auto en 你好", CancellationToken.None);
+Require(translateAuto.Any(r => r.Result.PluginId == TranslatePlugin.PluginId && r.Result.Title == "[en] 你好"), "Translator should support the translate alias and auto source language");
+var translateDefaultTarget = await router.QueryAsync("tr hello", CancellationToken.None);
+Require(translateDefaultTarget.Any(r => r.Result.PluginId == TranslatePlugin.PluginId && r.Result.Title == "[zh-CN] hello"),
+    "Translator should send unlabeled text to the default target language");
+var translateChineseTarget = await router.QueryAsync("tr \u4F60\u597D", CancellationToken.None);
+Require(translateChineseTarget.Any(r => r.Result.PluginId == TranslatePlugin.PluginId && r.Result.Title == "[en] \u4F60\u597D"),
+    "Translator should send text detected as the default target language to the secondary target language");
+Require(translationClient.LastRequest?.SourceLanguage == "zh-CN" && translationClient.LastRequest.TargetLanguage == "en",
+    "Translator should use detected source and secondary target languages");
+settings.SetPluginSetting(TranslatePlugin.PluginId, "defaultTargetLanguage", "en");
+settings.SetPluginSetting(TranslatePlugin.PluginId, "secondaryTargetLanguage", "ja");
+var translateAlreadyDefaultTarget = await router.QueryAsync("tr hello", CancellationToken.None);
+Require(translateAlreadyDefaultTarget.Any(r => r.Result.PluginId == TranslatePlugin.PluginId && r.Result.Title == "[ja] hello"),
+    "Translator should use the secondary target when detected text already matches the configured default target language");
+settings.SetPluginSetting(TranslatePlugin.PluginId, "defaultTargetLanguage", "zh-CN");
+settings.SetPluginSetting(TranslatePlugin.PluginId, "secondaryTargetLanguage", "en");
+settings.SetPluginSetting(TranslatePlugin.PluginId, "queryDelayMilliseconds", 250);
+var requestCountBeforeCancel = translationClient.RequestCount;
+using (var translateCancel = new CancellationTokenSource(20))
+{
+    try
+    {
+        await router.QueryAsync("tr debounce", translateCancel.Token);
+        Require(false, "Translator debounce delay should observe cancellation");
+    }
+    catch (OperationCanceledException)
+    {
+    }
+}
+
+Require(translationClient.RequestCount == requestCountBeforeCancel, "Translator should not call the API when a delayed query is canceled");
+settings.SetPluginSetting(TranslatePlugin.PluginId, "queryDelayMilliseconds", 0);
+var translateError = await router.QueryAsync("tr en zh fail quota", CancellationToken.None);
+Require(translateError.Any(r => r.Result.PluginId == TranslatePlugin.PluginId && r.Result.Id.StartsWith("translate-error-", StringComparison.Ordinal)), "Translator should show provider errors as results");
+
+var fileResults = await router.QueryAsync("file report", CancellationToken.None);
+var reportFile = fileResults.FirstOrDefault(r => r.Result.PluginId == FileSearchPlugin.PluginId && r.Result.Data.TryGetValue("path", out var path) && path.EndsWith("Quarterly Report.pdf", StringComparison.OrdinalIgnoreCase));
+Require(reportFile is not null, "File Search should return Everything file results");
+Require(reportFile!.Result.Icon?.Path?.EndsWith(Path.Combine("assets", "plugins", "file-search.png"), StringComparison.OrdinalIgnoreCase) == true, "File Search should use the magnifying-glass icon asset");
+Require(everythingClient.LastQuery == "report", "File Search should pass the query to Everything");
+var fileOpen = await router.ExecuteAsync(reportFile.Result, reportFile.Result.DefaultCommand, CancellationToken.None);
+Require(fileOpen.Succeeded && host.Shell.OpenedPath == @"C:\Reports\Quarterly Report.pdf", "File Search default action should open the selected path");
+await router.ExecuteAsync(reportFile.Result, "file.copyPath", CancellationToken.None);
+Require(host.Shell.CopiedPath == @"C:\Reports\Quarterly Report.pdf", "File Search should copy paths through the shell service");
+everythingClient.FailNext = true;
+var fileDiagnostic = await router.QueryAsync("file unavailable", CancellationToken.None);
+Require(fileDiagnostic.Any(r => r.Result.PluginId == FileSearchPlugin.PluginId && r.Result.Id == "file-search-unavailable"), "File Search should return a diagnostic result when Everything is unavailable");
+var emojiKeywordKey = ActivationSettings.KeywordSettingKey(EmojiPlugin.Manifest.Activations.First(a => a.Keyword == "emoji"));
+settings.SetPluginSetting(EmojiPlugin.PluginId, emojiKeywordKey, "emo");
+var oldEmojiKeyword = await router.QueryAsync("emoji rocket", CancellationToken.None);
+Require(!oldEmojiKeyword.Any(r => r.Result.PluginId == EmojiPlugin.PluginId), "custom keyword should replace the default keyword");
+var customEmojiKeyword = await router.QueryAsync("emo rocket", CancellationToken.None);
+Require(customEmojiKeyword.Any(r => r.Result.PluginId == EmojiPlugin.PluginId && r.Result.Data.TryGetValue("emoji", out var customEmoji) && customEmoji == "🚀"), "custom keyword should invoke the plugin");
+settings.SetPluginSetting(EmojiPlugin.PluginId, emojiKeywordKey, "emoji");
+
 var chineseEntry = AppLauncherPlugin.CreateEntry("微信", @"C:\Fake\WeChat.lnk");
 Require(AppLauncherPlugin.Score(chineseEntry, "weixin") > 0, "AppLauncher should match Chinese app names by pinyin");
 Require(AppLauncherPlugin.Score(chineseEntry, "wx") > 0, "AppLauncher should match Chinese app names by pinyin initials");
@@ -108,6 +199,21 @@ Require(!AppLauncherPlugin.ShouldIndexEntry("Uninstall Cheat Engine", @"C:\Fake\
 Require(AppLauncherPlugin.ShouldIndexEntry("Visual Studio Installer", @"C:\Fake\Visual Studio Installer.lnk", new ShortcutInfo { TargetPath = @"C:\Fake\VisualStudioInstaller.exe" }), "AppLauncher should keep normal installer apps");
 Require(AppLauncherPlugin.ShouldIndexEntry("Inno Setup Compiler", @"C:\Fake\Inno Setup Compiler.lnk", new ShortcutInfo { TargetPath = @"C:\Fake\Compil32.exe" }), "AppLauncher should keep normal setup tools");
 Require(AppLauncherPlugin.ShouldIndexEntry("Uninstall Node.js", @"C:\Fake\Uninstall Node.js.lnk", new ShortcutInfo { TargetPath = @"C:\Windows\SysWOW64\msiexec.exe", Arguments = "/x {TEST}" }, hideMaintenanceShortcuts: false), "AppLauncher should allow uninstall shortcuts when filtering is disabled");
+var appIdentity = AppLauncherPlugin.CreateLaunchIdentity(@"C:\Menu\User\Foo.lnk", new ShortcutInfo { TargetPath = @"D:\Apps\Foo.exe" });
+var duplicateAppIdentity = AppLauncherPlugin.CreateLaunchIdentity(@"C:\Menu\Common\Foo.lnk", new ShortcutInfo { TargetPath = @"d:\apps\foo.exe" });
+var profiledAppIdentity = AppLauncherPlugin.CreateLaunchIdentity(@"C:\Menu\Common\Foo Work.lnk", new ShortcutInfo { TargetPath = @"D:\Apps\Foo.exe", Arguments = "--profile work" });
+Require(appIdentity == duplicateAppIdentity, "AppLauncher should deduplicate shortcuts that target the same executable");
+Require(appIdentity != profiledAppIdentity, "AppLauncher should keep shortcuts with different launch arguments");
+var packagedAppEntry = AppLauncherPlugin.CreatePackagedAppEntry("Codex", "OpenAI.Codex_2p2nqsd0c76g0!App");
+Require(AppLauncherPlugin.Score(packagedAppEntry, "codex") > 0, "AppLauncher should match packaged Windows apps");
+Require(packagedAppEntry.ShortcutPath == @"shell:AppsFolder\OpenAI.Codex_2p2nqsd0c76g0!App", "AppLauncher should launch packaged apps through AppsFolder");
+Require(AppLauncherPlugin.CreateLaunchIdentity(packagedAppEntry.ShortcutPath, null) == "appx:OPENAI.CODEX_2P2NQSD0C76G0!APP", "AppLauncher should give packaged apps a stable launch identity");
+var startupDirectory = Environment.GetFolderPath(Environment.SpecialFolder.Startup);
+if (!string.IsNullOrWhiteSpace(startupDirectory))
+{
+    Require(AppLauncherPlugin.IsStartupShortcut(Path.Combine(startupDirectory, "Foo.lnk")), "AppLauncher should skip user Startup shortcuts");
+}
+
 await appLauncherPlugin.ExecuteAsync(new CommandContext
 {
     PluginId = AppLauncherPlugin.PluginId,
@@ -214,12 +320,31 @@ Require(clipboardSettings.Count == 5 &&
         clipboardSettings.Any(s => s.Key == "maxObjectMegabytes"), "Clipboard should expose capture, retention, and object quota settings");
 Require(((IPluginSettingsProvider)calculatorPlugin).GetSettings().Count == 0, "Calculator should not expose visible plugin settings");
 var screenshotSettings = ((IPluginSettingsProvider)screenshotPlugin).GetSettings();
-Require(screenshotSettings.Count == 5 &&
+Require(screenshotSettings.Count == 6 &&
         screenshotSettings.Any(s => s.Key == "defaultSaveDirectory") &&
         screenshotSettings.Any(s => s.Key == "defaultFormat") &&
         screenshotSettings.Any(s => s.Key == "jpegQuality") &&
+        screenshotSettings.Any(s => s.Key == "maxSavedFileMegabytes") &&
         screenshotSettings.Any(s => s.Key == "defaultColor") &&
         screenshotSettings.Any(s => s.Key == "defaultLineWidth"), "Screenshot should expose save and annotation defaults");
+var emojiSettings = ((IPluginSettingsProvider)emojiPlugin).GetSettings();
+Require(emojiSettings.Count == 2 &&
+        emojiSettings.Any(s => s.Key == "maxResults") &&
+        emojiSettings.Any(s => s.Key == "copyFormat"), "Emoji Search should expose result limit and copy format settings");
+var translateSettings = ((IPluginSettingsProvider)translatePlugin).GetSettings();
+Require(translateSettings.Any(s => s.Key == "provider") &&
+        translateSettings.Any(s => s.Key == "defaultSourceLanguage") &&
+        translateSettings.Any(s => s.Key == "defaultTargetLanguage") &&
+        translateSettings.Any(s => s.Key == "secondaryTargetLanguage") &&
+        translateSettings.Any(s => s.Key == "queryDelayMilliseconds") &&
+        translateSettings.Any(s => s.Key == "proxyMode") &&
+        translateSettings.Any(s => s.Key == "proxyUrl") &&
+        translateSettings.Any(s => s.Key == "baiduAppId") &&
+        translateSettings.Any(s => s.Key == "baiduSecretKey"), "Translator should expose provider, language, credential, and proxy settings");
+var fileSearchSettings = ((IPluginSettingsProvider)fileSearchPlugin).GetSettings();
+Require(fileSearchSettings.Count == 2 &&
+        fileSearchSettings.Any(s => s.Key == "includeFolders") &&
+        fileSearchSettings.Any(s => s.Key == "maxResults"), "File Search should expose Everything SDK result settings without a user-entered executable path");
 settings.SetPluginSetting(AppLauncherPlugin.PluginId, "hideMaintenanceShortcuts", false);
 Require(settings.GetPluginSetting(AppLauncherPlugin.PluginId, "hideMaintenanceShortcuts", true) == false, "plugin settings should persist typed values");
 settings.SetPluginSetting(ScreenshotPlugin.PluginId, "defaultColor", "Blue");
@@ -229,6 +354,9 @@ Require(SettingsWindow.ShouldShowPriorityControl(CalculatorPlugin.Manifest), "Ca
 Require(SettingsWindow.ShouldShowPriorityControl(RunCommandPlugin.Manifest), "Run Command should expose plugin priority because it supports implicit query");
 Require(!SettingsWindow.ShouldShowPriorityControl(ClipboardPlugin.Manifest), "Clipboard should not expose plugin priority because it has no implicit query activation");
 Require(!SettingsWindow.ShouldShowPriorityControl(ScreenshotPlugin.Manifest), "Screenshot should not expose plugin priority because it has no implicit query activation");
+Require(!SettingsWindow.ShouldShowPriorityControl(EmojiPlugin.Manifest), "Emoji Search should not expose plugin priority because it has no implicit query activation");
+Require(!SettingsWindow.ShouldShowPriorityControl(TranslatePlugin.Manifest), "Translator should not expose plugin priority because it has no implicit query activation");
+Require(!SettingsWindow.ShouldShowPriorityControl(FileSearchPlugin.Manifest), "File Search should not expose plugin priority because it has no implicit query activation");
 
 var launcherViewModel = new LauncherViewModel();
 var rankedResults = Enumerable.Range(0, 45)
@@ -254,8 +382,10 @@ Require(launcherViewModel.Results.Count == 20 && launcherViewModel.HasMoreResult
 launcherViewModel.SelectedIndex = 0;
 Require(launcherViewModel.SelectedDetails == "Calculator", "launcher selected details should hide ranking score");
 Require(!launcherViewModel.HasSelectedPreview, "launcher should hide the preview panel for standard results");
+var firstVisibleResult = launcherViewModel.Results[0];
 launcherViewModel.EnsureDisplayedThrough(20, 20);
 Require(launcherViewModel.DisplayedResultCount == 40 && launcherViewModel.Results.Count == 40, "launcher should auto-load the next page when selection moves past the displayed results");
+Require(ReferenceEquals(firstVisibleResult, launcherViewModel.Results[0]), "launcher should append load-more results without rebuilding existing rows");
 launcherViewModel.LoadMoreResults(20);
 Require(launcherViewModel.DisplayedResultCount == 45 && launcherViewModel.Results.Count == 45 && !launcherViewModel.HasMoreResults, "launcher should remove load more row after all results are visible");
 
@@ -400,6 +530,31 @@ Require(movedPixelSelection.Left == 320 &&
         movedPixelSelection.Width == 640 &&
         movedPixelSelection.Height == 360, "snapshot move tool should move the pixel selection");
 
+var windowTargets = ScreenshotOverlayLayout.WindowTargetsFromScreenBounds(
+    [
+        new System.Drawing.Rectangle(10, 10, 120, 100),
+        new System.Drawing.Rectangle(40, 40, 160, 120)
+    ],
+    new System.Drawing.Rectangle(0, 0, 400, 300));
+var windowHit = ScreenshotOverlayLayout.HitTestWindowTarget(
+    windowTargets,
+    new System.Windows.Point(50, 50),
+    new System.Windows.Size(400, 300),
+    new System.Windows.Size(400, 300));
+Require(windowHit?.PixelBounds == new System.Drawing.Rectangle(10, 10, 120, 100), "window selection should prefer the topmost matching window");
+
+var clippedWindowTargets = ScreenshotOverlayLayout.WindowTargetsFromScreenBounds(
+    [new System.Drawing.Rectangle(-450, 10, 200, 100)],
+    new System.Drawing.Rectangle(-400, 0, 800, 500));
+Require(clippedWindowTargets.Count == 1 &&
+        clippedWindowTargets[0].PixelBounds == new System.Drawing.Rectangle(0, 10, 150, 100), "window selection should clip negative-coordinate windows to the virtual screen");
+var clippedWindowHit = ScreenshotOverlayLayout.HitTestWindowTarget(
+    clippedWindowTargets,
+    new System.Windows.Point(12, 20),
+    new System.Windows.Size(800, 500),
+    new System.Windows.Size(800, 500));
+Require(clippedWindowHit is not null, "window selection should hit clipped multi-monitor window bounds");
+
 using (var synthetic = new System.Drawing.Bitmap(4, 2, System.Drawing.Imaging.PixelFormat.Format32bppArgb))
 {
     synthetic.SetPixel(0, 0, System.Drawing.Color.Red);
@@ -416,6 +571,28 @@ using (var synthetic = new System.Drawing.Bitmap(4, 2, System.Drawing.Imaging.Pi
     Require(crop.Width == 2 &&
             crop.Height == 2 &&
             crop.GetPixel(0, 0).ToArgb() == System.Drawing.Color.Blue.ToArgb(), "snapshot renderer should crop the selected pixels");
+}
+
+using (var large = new System.Drawing.Bitmap(420, 420, System.Drawing.Imaging.PixelFormat.Format32bppArgb))
+{
+    var random = new Random(12345);
+    for (var y = 0; y < large.Height; y++)
+    {
+        for (var x = 0; x < large.Width; x++)
+        {
+            large.SetPixel(x, y, System.Drawing.Color.FromArgb(random.Next(256), random.Next(256), random.Next(256)));
+        }
+    }
+
+    using var largeStream = new MemoryStream();
+    large.Save(largeStream, System.Drawing.Imaging.ImageFormat.Png);
+    var compressed = ScreenshotImageEncoder.EncodeForSave(
+        largeStream.ToArray(),
+        Path.Combine(root, "large-screenshot.png"),
+        90,
+        120_000);
+    Require(compressed.Bytes.LongLength <= 120_000, "screenshot encoder should compress large images under the configured threshold");
+    Require(Path.GetExtension(compressed.FilePath).Equals(".jpg", StringComparison.OrdinalIgnoreCase), "screenshot encoder should convert oversized PNG saves to JPEG");
 }
 
 var atomicPath = Path.Combine(root, "atomic-screenshot.png");
@@ -453,6 +630,102 @@ Require(File.Exists(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..
 Require(File.Exists(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "schemas", "manifest.schema.json")), "plugin manifest schema should exist");
 
 Console.WriteLine("Smoke checks passed.");
+
+static async Task VerifyExternalPluginImportAsync(string root, AppPaths paths)
+{
+    var source = Path.Combine(root, "external-plugin-source");
+    Directory.CreateDirectory(source);
+    await File.WriteAllTextAsync(Path.Combine(source, "manifest.json"), """
+    {
+      "id": "example.external",
+      "name": "Example External",
+      "version": "0.1.0",
+      "sdkVersion": "0.1",
+      "assembly": "Example.External.dll",
+      "entryType": "Example.External.Plugin",
+      "activations": []
+    }
+    """);
+    await File.WriteAllTextAsync(Path.Combine(source, "Example.External.dll"), string.Empty);
+
+    var importer = new ExternalPluginImporter();
+    var folderResult = await importer.ImportAsync(source, paths.Plugins, overwrite: false, CancellationToken.None);
+    Require(folderResult.Succeeded, "external plugin folder import should succeed");
+    Require(File.Exists(Path.Combine(paths.Plugins, "example.external", "manifest.json")), "external plugin import should copy the manifest");
+
+    var duplicateResult = await importer.ImportAsync(source, paths.Plugins, overwrite: false, CancellationToken.None);
+    Require(!duplicateResult.Succeeded, "external plugin import should reject duplicates without replace");
+
+    var zipPath = Path.Combine(root, "example-external.zip");
+    ZipFile.CreateFromDirectory(source, zipPath);
+    var zipPluginsRoot = Path.Combine(root, "zip-plugins");
+    var zipResult = await importer.ImportAsync(zipPath, zipPluginsRoot, overwrite: false, CancellationToken.None);
+    Require(zipResult.Succeeded, "external plugin ZIP import should succeed");
+    Require(File.Exists(Path.Combine(zipPluginsRoot, "example.external", "manifest.json")), "external plugin ZIP import should copy the manifest");
+
+    var registryHash = ExternalPluginRegistryService.Sha256File(zipPath);
+    var registryPath = Path.Combine(root, "plugin-registry.json");
+    await File.WriteAllTextAsync(registryPath, $$"""
+    {
+      "schemaVersion": "1",
+      "plugins": [
+        {
+          "id": "example.external",
+          "name": "Example External",
+          "description": "Smoke test plugin",
+          "version": "0.2.0",
+          "sdkVersion": "0.1",
+          "minWeedVersion": "0.1.0",
+          "packageUrl": "example-external.zip",
+          "sha256": "{{registryHash}}",
+          "repositoryUrl": "https://github.com/example/example.external",
+          "releaseNotesUrl": "https://github.com/example/example.external/releases/tag/v0.2.0",
+          "trusted": true,
+          "tags": ["smoke"]
+        }
+      ]
+    }
+    """);
+
+    var registryService = new ExternalPluginRegistryService();
+    var registry = await registryService.ReadRegistryAsync(registryPath, CancellationToken.None);
+    Require(registry.Plugins.Count == 1 && registry.Plugins[0].Id == "example.external", "external plugin registry should parse plugin entries");
+    var plans = registryService.BuildInstallPlans(registry, paths.Plugins);
+    Require(plans.Count == 1 && plans[0].State == ExternalPluginInstallState.UpdateAvailable, "external plugin registry should detect update availability");
+
+    var registryInstallRoot = Path.Combine(root, "registry-plugins");
+    var registryInstall = await registryService.DownloadAndImportAsync(
+        registry.Plugins[0],
+        registryPath,
+        registryInstallRoot,
+        Path.Combine(root, "registry-downloads"),
+        CancellationToken.None);
+    Require(registryInstall.Succeeded, "external plugin registry install should download, verify, and import a ZIP");
+    Require(File.Exists(Path.Combine(registryInstallRoot, "example.external", "manifest.json")), "external plugin registry install should copy the manifest");
+
+    var badHashInstall = await registryService.DownloadAndImportAsync(
+        registry.Plugins[0] with { Sha256 = new string('0', 64) },
+        registryPath,
+        Path.Combine(root, "bad-registry-plugins"),
+        Path.Combine(root, "bad-registry-downloads"),
+        CancellationToken.None);
+    Require(!badHashInstall.Succeeded, "external plugin registry install should reject SHA256 mismatches");
+
+    var incompatibleRegistry = new ExternalPluginRegistry
+    {
+        Plugins =
+        [
+            registry.Plugins[0] with
+            {
+                Id = "example.incompatible",
+                Name = "Example Incompatible",
+                MinWeedVersion = "999.0.0"
+            }
+        ]
+    };
+    var incompatiblePlans = registryService.BuildInstallPlans(incompatibleRegistry, paths.Plugins);
+    Require(incompatiblePlans.Count == 1 && incompatiblePlans[0].State == ExternalPluginInstallState.Incompatible, "external plugin registry should detect incompatible plugin versions");
+}
 
 async Task AddPluginAsync(WeedPluginManifest manifest, IWeedPlugin plugin)
 {
@@ -567,6 +840,10 @@ public sealed class SmokeShell : IWeedShell
 
     public string? OpenedPath { get; private set; }
 
+    public string? ContainingPath { get; private set; }
+
+    public string? CopiedPath { get; private set; }
+
     public ValueTask OpenAsync(string pathOrUri, CancellationToken cancellationToken)
     {
         OpenedPath = pathOrUri;
@@ -579,9 +856,17 @@ public sealed class SmokeShell : IWeedShell
         return ValueTask.CompletedTask;
     }
 
-    public ValueTask OpenContainingFolderAsync(string path, CancellationToken cancellationToken) => ValueTask.CompletedTask;
+    public ValueTask OpenContainingFolderAsync(string path, CancellationToken cancellationToken)
+    {
+        ContainingPath = path;
+        return ValueTask.CompletedTask;
+    }
 
-    public ValueTask CopyPathAsync(string path, CancellationToken cancellationToken) => ValueTask.CompletedTask;
+    public ValueTask CopyPathAsync(string path, CancellationToken cancellationToken)
+    {
+        CopiedPath = path;
+        return ValueTask.CompletedTask;
+    }
 }
 
 public sealed class SmokeWindows : IWeedWindowService
@@ -596,6 +881,9 @@ public sealed class SmokeWindows : IWeedWindowService
 public sealed class SmokeScreenCapture : IWeedScreenCapture
 {
     public bool ScrollingCalled { get; private set; }
+
+    public ValueTask<ScreenCaptureResult?> CaptureRegionRawAsync(CancellationToken cancellationToken) =>
+        ValueTask.FromResult<ScreenCaptureResult?>(null);
 
     public ValueTask<ScreenCaptureResult?> CaptureRegionInteractiveAsync(CancellationToken cancellationToken) =>
         ValueTask.FromResult<ScreenCaptureResult?>(null);
@@ -612,5 +900,76 @@ public sealed class SmokeScreenCapture : IWeedScreenCapture
             Width = 10,
             Height = 30
         });
+    }
+}
+
+public sealed class SmokeTranslationClient : ITranslationClient
+{
+    public int RequestCount { get; private set; }
+
+    public TranslationRequest? LastRequest { get; private set; }
+
+    public TranslateSettings? LastSettings { get; private set; }
+
+    public ValueTask<TranslationResponse> TranslateAsync(
+        TranslationRequest request,
+        TranslateSettings settings,
+        CancellationToken cancellationToken)
+    {
+        RequestCount++;
+        LastRequest = request;
+        LastSettings = settings;
+        if (request.Text.Contains("fail", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("fake quota exceeded");
+        }
+
+        var detectedSource = DetectSourceLanguage(request.Text);
+        var translated = request.SourceLanguage.Equals("en", StringComparison.OrdinalIgnoreCase) &&
+                         request.TargetLanguage.Equals("zh", StringComparison.OrdinalIgnoreCase) &&
+                         request.Text.Equals("HELLO Weed", StringComparison.Ordinal)
+            ? "你好 Weed"
+            : $"[{request.TargetLanguage}] {request.Text}";
+        return ValueTask.FromResult(new TranslationResponse(translated, "Smoke", detectedSource));
+    }
+
+    private static string DetectSourceLanguage(string text) =>
+        text.Any(character =>
+            character is >= '\u3400' and <= '\u4DBF' ||
+            character is >= '\u4E00' and <= '\u9FFF' ||
+            character is >= '\uF900' and <= '\uFAFF')
+            ? "zh-CN"
+            : "en";
+}
+
+public sealed class SmokeEverythingSearchClient : IEverythingSearchClient
+{
+    private readonly IReadOnlyList<EverythingSearchResult> _results;
+
+    public SmokeEverythingSearchClient(IReadOnlyList<EverythingSearchResult> results)
+    {
+        _results = results;
+    }
+
+    public string? LastQuery { get; private set; }
+
+    public FileSearchSettings? LastSettings { get; private set; }
+
+    public bool FailNext { get; set; }
+
+    public ValueTask<IReadOnlyList<EverythingSearchResult>> SearchAsync(
+        string query,
+        FileSearchSettings settings,
+        CancellationToken cancellationToken)
+    {
+        LastQuery = query;
+        LastSettings = settings;
+        if (FailNext)
+        {
+            FailNext = false;
+            throw new EverythingUnavailableException("Everything is not running.");
+        }
+
+        return ValueTask.FromResult(_results);
     }
 }

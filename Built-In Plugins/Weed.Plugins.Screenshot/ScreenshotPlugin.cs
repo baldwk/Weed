@@ -82,6 +82,15 @@ public sealed class ScreenshotPlugin : IWeedPlugin, IQueryProvider, ICommandHand
         },
         new()
         {
+            Key = "maxSavedFileMegabytes",
+            Label = "Max saved file size (MB)",
+            Kind = PluginSettingKind.Integer,
+            DefaultValue = "2",
+            Min = 1,
+            Max = 100
+        },
+        new()
+        {
             Key = "defaultColor",
             Label = "Annotation color",
             Kind = PluginSettingKind.Select,

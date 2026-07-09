@@ -1,0 +1,33 @@
+{
+  "id": "weed.ocr",
+  "name": "OCR",
+  "version": "0.1.0",
+  "sdkVersion": "0.1",
+  "assembly": "Weed.Plugins.Ocr.dll",
+  "entryType": "Weed.Plugins.Ocr.OcrPlugin",
+  "runtime": {
+    "resident": false
+  },
+  "activations": [
+    {
+      "type": "keyword",
+      "keyword": "ocr",
+      "command": "ocr.search"
+    },
+    {
+      "type": "hotkey",
+      "command": "ocr.captureRegion",
+      "defaultKeys": "Shift+Alt+O",
+      "configurable": true,
+      "behavior": "executeCommand"
+    }
+  ],
+  "permissions": [
+    "screen.capture",
+    "clipboard.write",
+    "file.read",
+    "file.write",
+    "shell.launch",
+    "storage.local"
+  ]
+}

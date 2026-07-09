@@ -238,6 +238,15 @@ public sealed class WindowsShellService : IWeedShell
     public ValueTask OpenAsync(string pathOrUri, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        if (pathOrUri.StartsWith("shell:", StringComparison.OrdinalIgnoreCase))
+        {
+            Process.Start(new ProcessStartInfo("explorer.exe", pathOrUri)
+            {
+                UseShellExecute = true
+            });
+            return ValueTask.CompletedTask;
+        }
+
         Process.Start(new ProcessStartInfo(pathOrUri)
         {
             UseShellExecute = true
@@ -293,17 +302,32 @@ public sealed class WindowsScreenCaptureService : IWeedScreenCapture
         Directory.CreateDirectory(_defaultScreenshotDirectory);
     }
 
+    public async ValueTask<ScreenCaptureResult?> CaptureRegionRawAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var bounds = await RegionCaptureOverlay.SelectRegionAsync(cancellationToken);
+        if (bounds is null || bounds.Value.Width <= 2 || bounds.Value.Height <= 2)
+        {
+            return null;
+        }
+
+        return Capture(bounds.Value);
+    }
+
     public async ValueTask<ScreenCaptureResult?> CaptureRegionInteractiveAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         var virtualScreen = Forms.SystemInformation.VirtualScreen;
         var snapshot = CaptureVirtualDesktop("Screenshot");
+        var windowTargets = EnumerateScreenshotWindowTargets(virtualScreen);
         return await ScreenshotSnapshotOverlay.CaptureRegionAndEditAsync(
             snapshot,
             virtualScreen,
+            windowTargets,
             DefaultAnnotationColor(),
             DefaultLineWidth(),
             JpegQuality(),
+            MaxSavedFileBytes(),
             SaveDefaultAnnotationColor,
             cancellationToken);
     }
@@ -317,6 +341,7 @@ public sealed class WindowsScreenCaptureService : IWeedScreenCapture
             DefaultAnnotationColor(),
             DefaultLineWidth(),
             JpegQuality(),
+            MaxSavedFileBytes(),
             SaveDefaultAnnotationColor,
             cancellationToken);
     }
@@ -325,7 +350,11 @@ public sealed class WindowsScreenCaptureService : IWeedScreenCapture
     {
         var virtualScreen = Forms.SystemInformation.VirtualScreen;
         var snapshot = CaptureVirtualDesktop("Screenshot-scroll");
-        var localBounds = await ScreenshotSnapshotOverlay.SelectRegionAsync(snapshot, virtualScreen, cancellationToken);
+        var localBounds = await ScreenshotSnapshotOverlay.SelectRegionAsync(
+            snapshot,
+            virtualScreen,
+            EnumerateScreenshotWindowTargets(virtualScreen),
+            cancellationToken);
         if (localBounds is null || localBounds.Value.Width <= 2 || localBounds.Value.Height <= 2)
         {
             return null;
@@ -356,6 +385,7 @@ public sealed class WindowsScreenCaptureService : IWeedScreenCapture
                 DefaultAnnotationColor(),
                 DefaultLineWidth(),
                 JpegQuality(),
+                MaxSavedFileBytes(),
                 SaveDefaultAnnotationColor,
                 cancellationToken);
         }
@@ -472,6 +502,9 @@ public sealed class WindowsScreenCaptureService : IWeedScreenCapture
     private int JpegQuality() =>
         Math.Clamp(_settings?.GetPluginSetting(ScreenshotPluginId, "jpegQuality", 90) ?? 90, 1, 100);
 
+    private long MaxSavedFileBytes() =>
+        Math.Clamp(_settings?.GetPluginSetting(ScreenshotPluginId, "maxSavedFileMegabytes", 2) ?? 2, 1, 100) * 1024L * 1024L;
+
     private string DefaultImageExtension()
     {
         var format = _settings?.GetPluginSetting(ScreenshotPluginId, "defaultFormat", "png") ?? "png";
@@ -488,6 +521,11 @@ public sealed class WindowsScreenCaptureService : IWeedScreenCapture
         graphics.CopyFromScreen(bounds.Left, bounds.Top, 0, 0, bounds.Size, CopyPixelOperation.SourceCopy);
         return bitmap;
     }
+
+    private static IReadOnlyList<ScreenshotWindowTarget> EnumerateScreenshotWindowTargets(Rectangle virtualScreenBounds) =>
+        ScreenshotOverlayLayout.WindowTargetsFromScreenBounds(
+            ScreenshotWindowEnumerator.EnumerateVisibleWindowBounds(),
+            virtualScreenBounds);
 
     private static byte[] EncodePng(Bitmap bitmap)
     {
@@ -509,6 +547,122 @@ public sealed class WindowsScreenCaptureService : IWeedScreenCapture
 
     [DllImport("user32.dll")]
     private static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint dwData, UIntPtr dwExtraInfo);
+}
+
+public sealed record ScreenshotWindowTarget(Rectangle PixelBounds);
+
+internal static class ScreenshotWindowEnumerator
+{
+    private const int DwmwaExtendedFrameBounds = 9;
+    private const int DwmwaCloaked = 14;
+
+    public static IReadOnlyList<Rectangle> EnumerateVisibleWindowBounds()
+    {
+        var bounds = new List<Rectangle>();
+        EnumWindows((hwnd, _) =>
+        {
+            if (!IsCandidateWindow(hwnd) || !TryGetWindowBounds(hwnd, out var windowBounds))
+            {
+                return true;
+            }
+
+            if (windowBounds.Width > 2 && windowBounds.Height > 2)
+            {
+                bounds.Add(windowBounds);
+            }
+
+            return true;
+        }, IntPtr.Zero);
+        return bounds;
+    }
+
+    private static bool IsCandidateWindow(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero ||
+            !IsWindowVisible(hwnd) ||
+            IsIconic(hwnd) ||
+            IsCloaked(hwnd))
+        {
+            return false;
+        }
+
+        var className = GetClassNameText(hwnd);
+        return !className.Equals("Progman", StringComparison.OrdinalIgnoreCase) &&
+               !className.Equals("WorkerW", StringComparison.OrdinalIgnoreCase) &&
+               !className.Equals("Shell_TrayWnd", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool TryGetWindowBounds(IntPtr hwnd, out Rectangle bounds)
+    {
+        bounds = Rectangle.Empty;
+        if (DwmGetWindowAttribute(
+                hwnd,
+                DwmwaExtendedFrameBounds,
+                out var extendedBounds,
+                Marshal.SizeOf<NativeRect>()) == 0)
+        {
+            bounds = extendedBounds.ToRectangle();
+        }
+        else if (GetWindowRect(hwnd, out var windowBounds))
+        {
+            bounds = windowBounds.ToRectangle();
+        }
+
+        return !bounds.IsEmpty && bounds.Width > 2 && bounds.Height > 2;
+    }
+
+    private static bool IsCloaked(IntPtr hwnd) =>
+        DwmGetWindowAttributeInt(hwnd, DwmwaCloaked, out var cloaked, sizeof(int)) == 0 && cloaked != 0;
+
+    private static string GetClassNameText(IntPtr hwnd)
+    {
+        var buffer = new char[256];
+        var length = GetClassName(hwnd, buffer, buffer.Length);
+        return length <= 0 ? string.Empty : new string(buffer, 0, length);
+    }
+
+    private delegate bool EnumWindowsProc(IntPtr hwnd, IntPtr lParam);
+
+    [DllImport("user32.dll")]
+    private static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+
+    [DllImport("user32.dll")]
+    private static extern bool IsWindowVisible(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    private static extern bool IsIconic(IntPtr hWnd);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool GetWindowRect(IntPtr hWnd, out NativeRect lpRect);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern int GetClassName(IntPtr hWnd, char[] lpClassName, int nMaxCount);
+
+    [DllImport("dwmapi.dll", PreserveSig = true)]
+    private static extern int DwmGetWindowAttribute(
+        IntPtr hwnd,
+        int dwAttribute,
+        out NativeRect pvAttribute,
+        int cbAttribute);
+
+    [DllImport("dwmapi.dll", EntryPoint = "DwmGetWindowAttribute", PreserveSig = true)]
+    private static extern int DwmGetWindowAttributeInt(
+        IntPtr hwnd,
+        int dwAttribute,
+        out int pvAttribute,
+        int cbAttribute);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private readonly struct NativeRect
+    {
+        public readonly int Left;
+        public readonly int Top;
+        public readonly int Right;
+        public readonly int Bottom;
+
+        public Rectangle ToRectangle() =>
+            Rectangle.FromLTRB(Left, Top, Math.Max(Left, Right), Math.Max(Top, Bottom));
+    }
 }
 
 public sealed class HotkeyManager : IDisposable
@@ -883,6 +1037,14 @@ internal sealed class RegionCaptureOverlay : Window
             SystemParameters.VirtualScreenHeight);
 }
 
+internal static class ScreenshotSelectionStyle
+{
+    public static readonly System.Windows.Media.Brush BorderBrush =
+        new SolidColorBrush(System.Windows.Media.Color.FromRgb(45, 145, 255));
+
+    public const double BorderThickness = 4;
+}
+
 internal sealed class CanvasGeometry : FrameworkElement
 {
     private Rect _selection;
@@ -908,7 +1070,7 @@ internal sealed class CanvasGeometry : FrameworkElement
         }
 
         drawingContext.DrawRectangle(System.Windows.Media.Brushes.Transparent, null, Selection);
-        drawingContext.DrawRectangle(null, new System.Windows.Media.Pen(System.Windows.Media.Brushes.White, 2), Selection);
+        drawingContext.DrawRectangle(null, new System.Windows.Media.Pen(ScreenshotSelectionStyle.BorderBrush, ScreenshotSelectionStyle.BorderThickness), Selection);
         var text = new FormattedText(
             $"{(int)Selection.Width} x {(int)Selection.Height}",
             System.Globalization.CultureInfo.InvariantCulture,
@@ -933,7 +1095,8 @@ internal sealed class ScrollingCaptureOptionsWindow : Window
     {
         Title = "Scrolling Capture";
         Width = 360;
-        Height = 230;
+        SizeToContent = SizeToContent.Height;
+        MinHeight = 260;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         ResizeMode = ResizeMode.NoResize;
         Topmost = true;
@@ -1062,7 +1225,8 @@ internal sealed class ScrollingCaptureProgressWindow : Window
     {
         Title = "Scrolling Capture";
         Width = 360;
-        Height = 150;
+        SizeToContent = SizeToContent.Height;
+        MinHeight = 170;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         ResizeMode = ResizeMode.NoResize;
         Topmost = true;
@@ -1113,7 +1277,9 @@ internal sealed class ScrollingCaptureProgressWindow : Window
         {
             Content = "Stop",
             Width = 86,
-            Height = 30,
+            MinHeight = 34,
+            Padding = new Thickness(12, 5, 12, 5),
+            VerticalContentAlignment = System.Windows.VerticalAlignment.Center,
             HorizontalAlignment = System.Windows.HorizontalAlignment.Right
         };
         stop.Click += (_, _) =>
@@ -1181,6 +1347,62 @@ public static class ScreenshotOverlayLayout
             pixelRect.Top / snapshotPixelSize.Height * overlaySize.Height,
             pixelRect.Width / snapshotPixelSize.Width * overlaySize.Width,
             pixelRect.Height / snapshotPixelSize.Height * overlaySize.Height);
+    }
+
+    public static IReadOnlyList<ScreenshotWindowTarget> WindowTargetsFromScreenBounds(
+        IEnumerable<Rectangle> screenBounds,
+        Rectangle virtualScreenBounds)
+    {
+        var targets = new List<ScreenshotWindowTarget>();
+        var snapshotBounds = new Rectangle(0, 0, Math.Max(1, virtualScreenBounds.Width), Math.Max(1, virtualScreenBounds.Height));
+        foreach (var bounds in screenBounds)
+        {
+            if (bounds.Width <= 2 || bounds.Height <= 2)
+            {
+                continue;
+            }
+
+            var localBounds = new Rectangle(
+                bounds.Left - virtualScreenBounds.Left,
+                bounds.Top - virtualScreenBounds.Top,
+                bounds.Width,
+                bounds.Height);
+            var clipped = ClampPixelRectangle(localBounds, snapshotBounds);
+            if (clipped.Width > 2 && clipped.Height > 2)
+            {
+                targets.Add(new ScreenshotWindowTarget(clipped));
+            }
+        }
+
+        return targets;
+    }
+
+    public static ScreenshotWindowTarget? HitTestWindowTarget(
+        IReadOnlyList<ScreenshotWindowTarget> targets,
+        Point displayPoint,
+        System.Windows.Size overlaySize,
+        System.Windows.Size snapshotPixelSize)
+    {
+        if (targets.Count == 0 ||
+            overlaySize.Width <= 0 ||
+            overlaySize.Height <= 0 ||
+            snapshotPixelSize.Width <= 0 ||
+            snapshotPixelSize.Height <= 0)
+        {
+            return null;
+        }
+
+        var x = (int)Math.Floor(displayPoint.X / overlaySize.Width * snapshotPixelSize.Width);
+        var y = (int)Math.Floor(displayPoint.Y / overlaySize.Height * snapshotPixelSize.Height);
+        foreach (var target in targets)
+        {
+            if (target.PixelBounds.Contains(x, y))
+            {
+                return target;
+            }
+        }
+
+        return null;
     }
 
     public static Rectangle MovePixelSelection(Rectangle origin, System.Drawing.Point pixelDelta, Rectangle snapshotBounds)
@@ -1346,9 +1568,142 @@ public static class ScreenshotFileIO
     }
 }
 
+public sealed record ScreenshotEncodedFile(string FilePath, byte[] Bytes);
+
+public static class ScreenshotImageEncoder
+{
+    private const int MinimumEncodedDimension = 32;
+
+    public static ScreenshotEncodedFile EncodeForSave(
+        byte[] pngBytes,
+        string requestedPath,
+        int jpegQuality,
+        long maxBytes)
+    {
+        var wantsJpeg = IsJpegPath(requestedPath);
+        var initialBytes = wantsJpeg
+            ? EncodeJpeg(LoadBitmap(pngBytes), jpegQuality)
+            : pngBytes;
+        if (maxBytes <= 0 || initialBytes.LongLength <= maxBytes)
+        {
+            return new ScreenshotEncodedFile(requestedPath, initialBytes);
+        }
+
+        var bitmap = LoadBitmap(pngBytes);
+        var jpegPath = wantsJpeg ? requestedPath : Path.ChangeExtension(requestedPath, ".jpg");
+        var bestBytes = initialBytes;
+        foreach (var quality in QualitySteps(jpegQuality))
+        {
+            var candidate = EncodeJpeg(bitmap, quality);
+            if (candidate.Length < bestBytes.Length)
+            {
+                bestBytes = candidate;
+            }
+
+            if (candidate.LongLength <= maxBytes)
+            {
+                return new ScreenshotEncodedFile(jpegPath, candidate);
+            }
+        }
+
+        var scale = 0.85;
+        while (bitmap.PixelWidth * scale >= MinimumEncodedDimension &&
+               bitmap.PixelHeight * scale >= MinimumEncodedDimension)
+        {
+            var scaled = ScaleBitmap(bitmap, scale);
+            foreach (var quality in QualitySteps(Math.Min(jpegQuality, 85)))
+            {
+                var candidate = EncodeJpeg(scaled, quality);
+                if (candidate.Length < bestBytes.Length)
+                {
+                    bestBytes = candidate;
+                }
+
+                if (candidate.LongLength <= maxBytes)
+                {
+                    return new ScreenshotEncodedFile(jpegPath, candidate);
+                }
+            }
+
+            scale *= 0.85;
+        }
+
+        return new ScreenshotEncodedFile(jpegPath, bestBytes);
+    }
+
+    private static IEnumerable<int> QualitySteps(int preferredQuality)
+    {
+        var start = Math.Clamp(preferredQuality, 1, 100);
+        for (var quality = start; quality >= 35; quality -= 5)
+        {
+            yield return quality;
+        }
+
+        foreach (var quality in new[] { 30, 25, 20, 15, 10, 5, 1 })
+        {
+            if (quality < start)
+            {
+                yield return quality;
+            }
+        }
+    }
+
+    private static bool IsJpegPath(string path)
+    {
+        var extension = Path.GetExtension(path);
+        return extension.Equals(".jpg", StringComparison.OrdinalIgnoreCase) ||
+               extension.Equals(".jpeg", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static byte[] EncodeJpeg(BitmapSource source, int quality)
+    {
+        var encoder = new JpegBitmapEncoder { QualityLevel = Math.Clamp(quality, 1, 100) };
+        encoder.Frames.Add(BitmapFrame.Create(ToJpegCompatibleBitmap(source)));
+        using var stream = new MemoryStream();
+        encoder.Save(stream);
+        return stream.ToArray();
+    }
+
+    private static BitmapSource ToJpegCompatibleBitmap(BitmapSource source)
+    {
+        if (source.Format == PixelFormats.Bgr24)
+        {
+            return source;
+        }
+
+        var converted = new FormatConvertedBitmap();
+        converted.BeginInit();
+        converted.Source = source;
+        converted.DestinationFormat = PixelFormats.Bgr24;
+        converted.EndInit();
+        converted.Freeze();
+        return converted;
+    }
+
+    private static BitmapSource ScaleBitmap(BitmapSource source, double scale)
+    {
+        var scaled = new TransformedBitmap(source, new ScaleTransform(scale, scale));
+        scaled.Freeze();
+        return scaled;
+    }
+
+    private static BitmapImage LoadBitmap(byte[] pngBytes)
+    {
+        var bitmap = new BitmapImage();
+        using var stream = new MemoryStream(pngBytes);
+        bitmap.BeginInit();
+        bitmap.CacheOption = BitmapCacheOption.OnLoad;
+        bitmap.StreamSource = stream;
+        bitmap.EndInit();
+        bitmap.Freeze();
+        return bitmap;
+    }
+}
+
 internal sealed class ScreenshotSnapshotOverlay : Window
 {
     private static int _openOverlay;
+    private const double SelectionClickTolerance = 4;
     private readonly Canvas _root = new();
     private readonly SnapshotSelectionAdorner _selectionAdorner = new();
     private readonly ScreenCaptureResult _snapshot;
@@ -1356,9 +1711,11 @@ internal sealed class ScreenshotSnapshotOverlay : Window
     private readonly string _initialColor;
     private readonly double _initialWidth;
     private readonly int _jpegQuality;
+    private readonly long _maxSavedBytes;
     private readonly Action<string>? _saveColor;
     private readonly bool _selectOnly;
     private readonly bool _startWithWholeImage;
+    private readonly IReadOnlyList<ScreenshotWindowTarget> _windowTargets;
     private readonly Slider _width = new();
     private readonly Grid _selectionSurface = new();
     private readonly InkCanvas _inkCanvas = new();
@@ -1378,6 +1735,8 @@ internal sealed class ScreenshotSnapshotOverlay : Window
     private System.Windows.Controls.Primitives.Popup? _colorPopup;
     private TextBlock? _statusText;
     private Point? _selectStart;
+    private ScreenshotWindowTarget? _hoverWindowTarget;
+    private ScreenshotWindowTarget? _clickWindowTarget;
     private Point? _moveStart;
     private Rectangle _moveOriginPixel;
     private System.Windows.Shapes.Shape? _activeShape;
@@ -1398,18 +1757,22 @@ internal sealed class ScreenshotSnapshotOverlay : Window
         string initialColor,
         double initialWidth,
         int jpegQuality,
+        long maxSavedBytes,
         Action<string>? saveColor,
         bool selectOnly,
-        bool startWithWholeImage)
+        bool startWithWholeImage,
+        IReadOnlyList<ScreenshotWindowTarget>? windowTargets = null)
     {
         _snapshot = snapshot;
         _virtualScreenBounds = virtualScreenBounds;
         _initialColor = initialColor;
         _initialWidth = initialWidth;
         _jpegQuality = jpegQuality;
+        _maxSavedBytes = maxSavedBytes;
         _saveColor = saveColor;
         _selectOnly = selectOnly;
         _startWithWholeImage = startWithWholeImage;
+        _windowTargets = windowTargets ?? [];
         _currentColor = NormalizeColorName(initialColor);
 
         WindowStyle = WindowStyle.None;
@@ -1442,14 +1805,16 @@ internal sealed class ScreenshotSnapshotOverlay : Window
     public static async ValueTask<ScreenCaptureResult?> CaptureRegionAndEditAsync(
         ScreenCaptureResult snapshot,
         Rectangle virtualScreenBounds,
+        IReadOnlyList<ScreenshotWindowTarget> windowTargets,
         string initialColor,
         double initialWidth,
         int jpegQuality,
+        long maxSavedBytes,
         Action<string>? saveColor,
         CancellationToken cancellationToken)
     {
         return await ShowOverlayAsync(
-            new ScreenshotSnapshotOverlay(snapshot, virtualScreenBounds, initialColor, initialWidth, jpegQuality, saveColor, selectOnly: false, startWithWholeImage: false),
+            new ScreenshotSnapshotOverlay(snapshot, virtualScreenBounds, initialColor, initialWidth, jpegQuality, maxSavedBytes, saveColor, selectOnly: false, startWithWholeImage: false, windowTargets: windowTargets),
             overlay => overlay._captureResult,
             cancellationToken);
     }
@@ -1457,10 +1822,11 @@ internal sealed class ScreenshotSnapshotOverlay : Window
     public static async ValueTask<Rectangle?> SelectRegionAsync(
         ScreenCaptureResult snapshot,
         Rectangle virtualScreenBounds,
+        IReadOnlyList<ScreenshotWindowTarget> windowTargets,
         CancellationToken cancellationToken)
     {
         return await ShowOverlayAsync<Rectangle?>(
-            new ScreenshotSnapshotOverlay(snapshot, virtualScreenBounds, "Red", 4, 90, null, selectOnly: true, startWithWholeImage: false),
+            new ScreenshotSnapshotOverlay(snapshot, virtualScreenBounds, "Red", 4, 90, 0, null, selectOnly: true, startWithWholeImage: false, windowTargets: windowTargets),
             overlay => overlay._selectionPixelRect.IsEmpty ? null : overlay._selectionPixelRect,
             cancellationToken);
     }
@@ -1470,11 +1836,12 @@ internal sealed class ScreenshotSnapshotOverlay : Window
         string initialColor,
         double initialWidth,
         int jpegQuality,
+        long maxSavedBytes,
         Action<string>? saveColor,
         CancellationToken cancellationToken)
     {
         return await ShowOverlayAsync(
-            new ScreenshotSnapshotOverlay(capture, new Rectangle(0, 0, capture.Width, capture.Height), initialColor, initialWidth, jpegQuality, saveColor, selectOnly: false, startWithWholeImage: true),
+            new ScreenshotSnapshotOverlay(capture, new Rectangle(0, 0, capture.Width, capture.Height), initialColor, initialWidth, jpegQuality, maxSavedBytes, saveColor, selectOnly: false, startWithWholeImage: true),
             overlay => overlay._captureResult,
             cancellationToken);
     }
@@ -1546,19 +1913,34 @@ internal sealed class ScreenshotSnapshotOverlay : Window
         }
 
         _selectStart = e.GetPosition(this);
+        _clickWindowTarget = HitTestWindowTarget(_selectStart.Value);
         UpdateMagnifier(_selectStart.Value);
         CaptureMouse();
     }
 
     private void OnSelectMouseMove(object sender, System.Windows.Input.MouseEventArgs e)
     {
-        if (_editing || _selectStart is null)
+        if (_editing)
         {
             return;
         }
 
         var current = e.GetPosition(this);
+        if (_selectStart is null)
+        {
+            UpdateWindowHover(current);
+            return;
+        }
+
         _selectionDisplayRect = ToRect(_selectStart.Value, current);
+        if (IsClickSized(_selectionDisplayRect) && _clickWindowTarget is not null)
+        {
+            ShowWindowTarget(_clickWindowTarget);
+            UpdateMagnifier(current);
+            return;
+        }
+
+        _clickWindowTarget = null;
         _selectionAdorner.Selection = _selectionDisplayRect;
         UpdateMagnifier(current);
     }
@@ -1574,12 +1956,21 @@ internal sealed class ScreenshotSnapshotOverlay : Window
         HideMagnifier();
         var displayRect = ToRect(_selectStart.Value, e.GetPosition(this));
         _selectStart = null;
-        if (displayRect.Width <= 2 || displayRect.Height <= 2)
+        if (IsClickSized(displayRect))
         {
+            var target = _clickWindowTarget ?? HitTestWindowTarget(e.GetPosition(this));
+            _clickWindowTarget = null;
+            if (target is not null)
+            {
+                AcceptSelection(target.PixelBounds);
+                return;
+            }
+
             Close();
             return;
         }
 
+        _clickWindowTarget = null;
         var pixelRect = ScreenshotOverlayLayout.DisplayRectToPixelRect(
             displayRect,
             OverlaySize(),
@@ -1590,6 +1981,49 @@ internal sealed class ScreenshotSnapshotOverlay : Window
             return;
         }
 
+        AcceptSelection(pixelRect);
+    }
+
+    private bool IsClickSized(Rect rect) =>
+        rect.Width <= SelectionClickTolerance && rect.Height <= SelectionClickTolerance;
+
+    private void UpdateWindowHover(Point displayPoint)
+    {
+        var target = HitTestWindowTarget(displayPoint);
+        if (Equals(target, _hoverWindowTarget))
+        {
+            return;
+        }
+
+        _hoverWindowTarget = target;
+        if (target is null)
+        {
+            Cursor = System.Windows.Input.Cursors.Cross;
+            _selectionAdorner.Selection = Rect.Empty;
+            return;
+        }
+
+        Cursor = System.Windows.Input.Cursors.Hand;
+        ShowWindowTarget(target);
+    }
+
+    private void ShowWindowTarget(ScreenshotWindowTarget target)
+    {
+        _selectionAdorner.Selection = ScreenshotOverlayLayout.PixelRectToDisplayRect(
+            target.PixelBounds,
+            OverlaySize(),
+            SnapshotPixelSize());
+    }
+
+    private ScreenshotWindowTarget? HitTestWindowTarget(Point displayPoint) =>
+        ScreenshotOverlayLayout.HitTestWindowTarget(
+            _windowTargets,
+            displayPoint,
+            OverlaySize(),
+            SnapshotPixelSize());
+
+    private void AcceptSelection(Rectangle pixelRect)
+    {
         if (_selectOnly)
         {
             _selectionPixelRect = pixelRect;
@@ -2268,11 +2702,11 @@ internal sealed class ScreenshotSnapshotOverlay : Window
             }
             else
             {
-                var outputBytes = EncodeForPath(bytes, outputPath!, _jpegQuality);
-                await Task.Run(() => ScreenshotFileIO.WriteAllBytesAtomic(outputPath!, outputBytes));
+                var output = ScreenshotImageEncoder.EncodeForSave(bytes, outputPath!, _jpegQuality, _maxSavedBytes);
+                await Task.Run(() => ScreenshotFileIO.WriteAllBytesAtomic(output.FilePath, output.Bytes));
                 _captureResult = new ScreenCaptureResult
                 {
-                    FilePath = outputPath!,
+                    FilePath = output.FilePath,
                     Width = _selectionPixelRect.Width,
                     Height = _selectionPixelRect.Height,
                     CopiedToClipboard = false
@@ -2307,23 +2741,6 @@ internal sealed class ScreenshotSnapshotOverlay : Window
         bitmap.Render(_selectionSurface);
         bitmap.Freeze();
         return bitmap;
-    }
-
-    private static byte[] EncodeForPath(byte[] pngBytes, string outputPath, int jpegQuality)
-    {
-        var extension = Path.GetExtension(outputPath);
-        if (!extension.Equals(".jpg", StringComparison.OrdinalIgnoreCase) &&
-            !extension.Equals(".jpeg", StringComparison.OrdinalIgnoreCase))
-        {
-            return pngBytes;
-        }
-
-        var bitmap = LoadBitmap(pngBytes);
-        var encoder = new JpegBitmapEncoder { QualityLevel = Math.Clamp(jpegQuality, 1, 100) };
-        encoder.Frames.Add(BitmapFrame.Create(bitmap));
-        using var stream = new MemoryStream();
-        encoder.Save(stream);
-        return stream.ToArray();
     }
 
     private bool TryChooseSavePath(string currentPath, out string? outputPath)
@@ -2581,7 +2998,7 @@ internal sealed class SnapshotSelectionAdorner : FrameworkElement
         var fullGeometry = new RectangleGeometry(full);
         var selectionGeometry = new RectangleGeometry(Selection);
         drawingContext.DrawGeometry(dim, null, new CombinedGeometry(GeometryCombineMode.Exclude, fullGeometry, selectionGeometry));
-        drawingContext.DrawRectangle(null, new System.Windows.Media.Pen(System.Windows.Media.Brushes.White, 2), Selection);
+        drawingContext.DrawRectangle(null, new System.Windows.Media.Pen(ScreenshotSelectionStyle.BorderBrush, ScreenshotSelectionStyle.BorderThickness), Selection);
         var text = new FormattedText(
             $"{Math.Round(Selection.Width)} x {Math.Round(Selection.Height)}",
             System.Globalization.CultureInfo.InvariantCulture,
@@ -2888,8 +3305,8 @@ internal sealed class ScreenshotCaptureOverlay : Window
 
         _imageFrame = new System.Windows.Shapes.Rectangle
         {
-            Stroke = System.Windows.Media.Brushes.White,
-            StrokeThickness = 2,
+            Stroke = ScreenshotSelectionStyle.BorderBrush,
+            StrokeThickness = ScreenshotSelectionStyle.BorderThickness,
             Fill = System.Windows.Media.Brushes.Transparent,
             IsHitTestVisible = false,
             UseLayoutRounding = true,

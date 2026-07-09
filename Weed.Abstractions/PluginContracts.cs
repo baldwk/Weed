@@ -110,6 +110,8 @@ public interface IWeedWindowService
 
 public interface IWeedScreenCapture
 {
+    ValueTask<ScreenCaptureResult?> CaptureRegionRawAsync(CancellationToken cancellationToken);
+
     ValueTask<ScreenCaptureResult?> CaptureRegionInteractiveAsync(CancellationToken cancellationToken);
 
     ValueTask<ScreenCaptureResult?> CapturePrimaryScreenAsync(CancellationToken cancellationToken);

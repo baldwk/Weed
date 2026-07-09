@@ -51,6 +51,7 @@ dotnet publish (Join-Path $root "Weed.App\Weed.App.csproj") `
     -o $Output
 
 Copy-Item (Join-Path $root "README.md") $Output -Force
+Copy-Item (Join-Path $root "plugins.registry.json") $Output -Force
 Copy-DirectoryFresh (Join-Path $root "docs") (Join-Path $Output "docs")
 Copy-DirectoryFresh (Join-Path $root "schemas") (Join-Path $Output "schemas")
 Copy-DirectoryFresh (Join-Path $root "templates") (Join-Path $Output "templates")

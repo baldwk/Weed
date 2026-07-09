@@ -7,8 +7,11 @@ using Weed.PluginHost;
 using Weed.Plugins.AppLauncher;
 using Weed.Plugins.Calculator;
 using Weed.Plugins.Clipboard;
+using Weed.Plugins.Emoji;
+using Weed.Plugins.FileSearch;
 using Weed.Plugins.RunCommand;
 using Weed.Plugins.Screenshot;
+using Weed.Plugins.Translate;
 using Forms = System.Windows.Forms;
 
 namespace Weed.App;
@@ -49,6 +52,9 @@ public partial class App : System.Windows.Application
         await _pluginRuntime.AddBuiltInAsync(AppLauncherPlugin.Manifest, new AppLauncherPlugin(), startupCts.Token);
         await _pluginRuntime.AddBuiltInAsync(CalculatorPlugin.Manifest, new CalculatorPlugin(), startupCts.Token);
         await _pluginRuntime.AddBuiltInAsync(ClipboardPlugin.Manifest, new ClipboardPlugin(), startupCts.Token);
+        await _pluginRuntime.AddBuiltInAsync(EmojiPlugin.Manifest, new EmojiPlugin(), startupCts.Token);
+        await _pluginRuntime.AddBuiltInAsync(TranslatePlugin.Manifest, new TranslatePlugin(), startupCts.Token);
+        await _pluginRuntime.AddBuiltInAsync(FileSearchPlugin.Manifest, new FileSearchPlugin(), startupCts.Token);
         await _pluginRuntime.AddBuiltInAsync(RunCommandPlugin.Manifest, new RunCommandPlugin(), startupCts.Token);
         await _pluginRuntime.AddBuiltInAsync(ScreenshotPlugin.Manifest, new ScreenshotPlugin(), startupCts.Token);
         await _pluginRuntime.ScanDirectoryAsync(paths.Plugins, startupCts.Token);
@@ -163,7 +169,8 @@ public partial class App : System.Windows.Application
             IDisposable? closeOnLostFocusScope = null;
             try
             {
-                if (pluginId.Equals(ScreenshotPlugin.PluginId, StringComparison.OrdinalIgnoreCase))
+                if (pluginId.Equals(ScreenshotPlugin.PluginId, StringComparison.OrdinalIgnoreCase) ||
+                    commandId.StartsWith("ocr.", StringComparison.OrdinalIgnoreCase))
                 {
                     closeOnLostFocusScope = window.SuspendCloseOnLostFocus();
                 }

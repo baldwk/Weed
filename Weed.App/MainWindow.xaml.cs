@@ -11,6 +11,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Weed.Abstractions;
 using Weed.Core;
+using Weed.PluginHost;
 using Weed.Platform.Windows;
 
 namespace Weed.App;
@@ -600,7 +601,8 @@ public partial class MainWindow : Window
 
     private static bool ShouldKeepLauncherVisibleForCommand(WeedResult result, string command) =>
         result.PluginId.Equals("weed.screenshot", StringComparison.OrdinalIgnoreCase) ||
-        command.StartsWith("screenshot.", StringComparison.OrdinalIgnoreCase);
+        command.StartsWith("screenshot.", StringComparison.OrdinalIgnoreCase) ||
+        command.StartsWith("ocr.", StringComparison.OrdinalIgnoreCase);
 
     private string BuildQueryText(string visibleText)
     {
@@ -780,8 +782,10 @@ public sealed class LauncherViewModel : ObservableObject
             return;
         }
 
+        var previousDisplayedResultCount = _displayedResultCount;
         _displayedResultCount = Math.Min(_displayedResultCount + Math.Max(1, pageSize), _allResults.Count);
-        RebuildResults();
+        AppendResults(previousDisplayedResultCount, _displayedResultCount);
+        NotifyResultsChanged();
     }
 
     public void EnsureDisplayedThrough(int resultIndex, int pageSize)
@@ -795,11 +799,20 @@ public sealed class LauncherViewModel : ObservableObject
     private void RebuildResults()
     {
         Results.Clear();
-        foreach (var result in _allResults.Take(_displayedResultCount))
-        {
-            Results.Add(SearchResultItem.FromRanked(result));
-        }
+        AppendResults(0, _displayedResultCount);
+        NotifyResultsChanged();
+    }
 
+    private void AppendResults(int startIndex, int endIndex)
+    {
+        for (var i = startIndex; i < endIndex; i++)
+        {
+            Results.Add(SearchResultItem.FromRanked(_allResults[i]));
+        }
+    }
+
+    private void NotifyResultsChanged()
+    {
         OnPropertyChanged(nameof(TotalResultCount));
         OnPropertyChanged(nameof(DisplayedResultCount));
         OnPropertyChanged(nameof(HasMoreResults));
@@ -990,6 +1003,29 @@ public sealed class SettingsWindow : Window
 
     private sealed record SettingsNavItem(string Id, string Title, string Icon, LoadedPlugin? Plugin = null);
 
+    private sealed class ExternalPluginRegistryViewItem
+    {
+        public required ExternalPluginInstallPlan Plan { get; init; }
+
+        public ExternalPluginRegistryEntry Entry => Plan.Entry;
+
+        public string Display
+        {
+            get
+            {
+                var state = Plan.State switch
+                {
+                    ExternalPluginInstallState.NotInstalled => "Not installed",
+                    ExternalPluginInstallState.UpdateAvailable => "Update available",
+                    ExternalPluginInstallState.Installed => "Installed",
+                    ExternalPluginInstallState.Incompatible => "Incompatible",
+                    _ => "Invalid"
+                };
+                return $"{Entry.Name} {Entry.Version} - {state}";
+            }
+        }
+    }
+
     private UIElement BuildContent()
     {
         var root = new Grid { Background = Brush("#111318") };
@@ -1043,10 +1079,11 @@ public sealed class SettingsWindow : Window
         AddNavButton(nav, new SettingsNavItem("general", "General", "M5,12 H19 M12,5 V19 M7,7 L17,17 M17,7 L7,17"));
         AddNavButton(nav, new SettingsNavItem("hotkeys", "Hotkeys", "M4,7 H20 V17 H4 Z M7,10 H9 M11,10 H13 M15,10 H17 M7,14 H17"));
         AddNavButton(nav, new SettingsNavItem("updates", "Updates", "M12,4 V16 M7,11 L12,16 L17,11 M5,20 H19"));
+        AddNavButton(nav, new SettingsNavItem("externalPlugins", "External Plugins", "M12,3 V15 M7,10 L12,15 L17,10 M5,21 H19 M5,17 H19"));
 
         nav.Children.Add(new TextBlock
         {
-            Text = "PLUGINS",
+            Text = "BUILT-IN PLUGINS",
             Foreground = (System.Windows.Media.Brush)System.Windows.Application.Current.Resources["TextSecondaryBrush"],
             FontSize = 11,
             FontWeight = FontWeights.SemiBold,
@@ -1146,6 +1183,7 @@ public sealed class SettingsWindow : Window
             {
                 "hotkeys" => BuildHotkeysTab(),
                 "updates" => BuildUpdatesTab(),
+                "externalPlugins" => BuildExternalPluginsTab(),
                 _ => BuildGeneralTab()
             };
     }
@@ -1213,7 +1251,12 @@ public sealed class SettingsWindow : Window
         };
         var grid = new Grid();
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(300) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition
+        {
+            Width = GridLength.Auto,
+            MinWidth = 300,
+            MaxWidth = 420
+        });
 
         var copy = new StackPanel { Margin = new Thickness(0, 0, 22, 0) };
         copy.Children.Add(new TextBlock
@@ -1264,8 +1307,11 @@ public sealed class SettingsWindow : Window
         {
             Text = text,
             Width = width,
-            Height = 30,
+            Height = 34,
+            MinHeight = 34,
             Padding = new Thickness(8, 5, 8, 5),
+            FontSize = 13,
+            VerticalContentAlignment = VerticalAlignment.Center,
             Background = Brush("#20242E"),
             BorderBrush = Brush("#343B49"),
             BorderThickness = new Thickness(1),
@@ -1378,10 +1424,23 @@ public sealed class SettingsWindow : Window
 
     private System.Windows.Controls.ComboBox StyledComboBox(double width = 180)
     {
+        var itemStyle = new Style(typeof(System.Windows.Controls.ComboBoxItem));
+        itemStyle.Setters.Add(new Setter(FontSizeProperty, 13.0));
+        itemStyle.Setters.Add(new Setter(MinHeightProperty, 32.0));
+        itemStyle.Setters.Add(new Setter(PaddingProperty, new Thickness(10, 6, 10, 6)));
+        itemStyle.Setters.Add(new Setter(VerticalContentAlignmentProperty, VerticalAlignment.Center));
+        itemStyle.Setters.Add(new Setter(HorizontalContentAlignmentProperty, System.Windows.HorizontalAlignment.Stretch));
+
         return new System.Windows.Controls.ComboBox
         {
             Width = width,
-            Height = 30,
+            Height = 34,
+            MinHeight = 34,
+            Padding = new Thickness(10, 4, 10, 4),
+            FontSize = 13,
+            VerticalContentAlignment = VerticalAlignment.Center,
+            HorizontalContentAlignment = System.Windows.HorizontalAlignment.Stretch,
+            ItemContainerStyle = itemStyle,
             Background = Brush("#20242E"),
             BorderBrush = Brush("#343B49"),
             Foreground = (System.Windows.Media.Brush)System.Windows.Application.Current.Resources["TextPrimaryBrush"]
@@ -1408,9 +1467,11 @@ public sealed class SettingsWindow : Window
             {
                 Content = option,
                 Tag = option,
-                Height = 30,
+                MinHeight = 34,
                 MinWidth = 72,
+                FontSize = 13,
                 Padding = new Thickness(10, 4, 10, 4),
+                VerticalContentAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(buttons.Count == 0 ? 0 : 4, 0, 0, 0)
             };
             button.Click += (_, _) =>
@@ -1488,14 +1549,18 @@ public sealed class SettingsWindow : Window
         {
             Content = "Check now",
             Padding = new Thickness(14, 6, 14, 6),
-            Height = 32
+            MinHeight = 34,
+            FontSize = 13,
+            VerticalContentAlignment = VerticalAlignment.Center
         };
         var download = new System.Windows.Controls.Button
         {
             Content = "Download package",
             Padding = new Thickness(14, 6, 14, 6),
             Margin = new Thickness(8, 0, 0, 0),
-            Height = 32,
+            MinHeight = 34,
+            FontSize = 13,
+            VerticalContentAlignment = VerticalAlignment.Center,
             IsEnabled = false
         };
         buttons.Children.Add(check);
@@ -1583,6 +1648,378 @@ public sealed class SettingsWindow : Window
             ]);
     }
 
+    private UIElement BuildExternalPluginsTab()
+    {
+        var registryBox = StyledTextBox(_settings.AppSettings.ExternalPluginRegistryUrl, 420);
+        registryBox.LostFocus += (_, _) => _settings.SetAppSettings(_settings.AppSettings with
+        {
+            ExternalPluginRegistryUrl = registryBox.Text.Trim()
+        });
+
+        var refreshRegistry = new System.Windows.Controls.Button
+        {
+            Content = "Refresh",
+            Padding = new Thickness(12, 6, 12, 6),
+            MinHeight = 34,
+            FontSize = 13,
+            VerticalContentAlignment = VerticalAlignment.Center
+        };
+        var installRegistry = new System.Windows.Controls.Button
+        {
+            Content = "Install",
+            Padding = new Thickness(12, 6, 12, 6),
+            Margin = new Thickness(8, 0, 0, 0),
+            MinHeight = 34,
+            FontSize = 13,
+            VerticalContentAlignment = VerticalAlignment.Center,
+            IsEnabled = false
+        };
+        var openRepository = new System.Windows.Controls.Button
+        {
+            Content = "Repository",
+            Padding = new Thickness(12, 6, 12, 6),
+            Margin = new Thickness(8, 0, 0, 0),
+            MinHeight = 34,
+            FontSize = 13,
+            VerticalContentAlignment = VerticalAlignment.Center,
+            IsEnabled = false
+        };
+        var registryActions = new StackPanel
+        {
+            Orientation = System.Windows.Controls.Orientation.Horizontal,
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Right
+        };
+        registryActions.Children.Add(refreshRegistry);
+        registryActions.Children.Add(installRegistry);
+        registryActions.Children.Add(openRepository);
+
+        var registryList = new System.Windows.Controls.ListBox
+        {
+            Width = 420,
+            Height = 210,
+            DisplayMemberPath = nameof(ExternalPluginRegistryViewItem.Display),
+            Background = Brush("#20242E"),
+            BorderBrush = Brush("#343B49"),
+            BorderThickness = new Thickness(1),
+            Foreground = (System.Windows.Media.Brush)System.Windows.Application.Current.Resources["TextPrimaryBrush"]
+        };
+        var registryStatus = new TextBlock
+        {
+            Text = "Refresh the registry to browse trusted external plugins.",
+            TextWrapping = TextWrapping.Wrap,
+            TextAlignment = TextAlignment.Right,
+            Foreground = (System.Windows.Media.Brush)System.Windows.Application.Current.Resources["TextSecondaryBrush"]
+        };
+
+        var importZip = new System.Windows.Controls.Button
+        {
+            Content = "Import ZIP",
+            Padding = new Thickness(12, 6, 12, 6),
+            MinHeight = 34,
+            FontSize = 13,
+            VerticalContentAlignment = VerticalAlignment.Center
+        };
+        var importFolder = new System.Windows.Controls.Button
+        {
+            Content = "Import folder",
+            Padding = new Thickness(12, 6, 12, 6),
+            Margin = new Thickness(8, 0, 0, 0),
+            MinHeight = 34,
+            FontSize = 13,
+            VerticalContentAlignment = VerticalAlignment.Center
+        };
+        var openFolder = new System.Windows.Controls.Button
+        {
+            Content = "Open folder",
+            Padding = new Thickness(12, 6, 12, 6),
+            Margin = new Thickness(8, 0, 0, 0),
+            MinHeight = 34,
+            FontSize = 13,
+            VerticalContentAlignment = VerticalAlignment.Center
+        };
+        var actions = new StackPanel
+        {
+            Orientation = System.Windows.Controls.Orientation.Horizontal,
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Right
+        };
+        actions.Children.Add(importZip);
+        actions.Children.Add(importFolder);
+        actions.Children.Add(openFolder);
+
+        var replaceExisting = new System.Windows.Controls.CheckBox
+        {
+            IsChecked = false
+        };
+        var status = new TextBlock
+        {
+            Text = "No plugin imported in this session.",
+            TextWrapping = TextWrapping.Wrap,
+            TextAlignment = TextAlignment.Right,
+            Foreground = (System.Windows.Media.Brush)System.Windows.Application.Current.Resources["TextSecondaryBrush"]
+        };
+
+        registryList.SelectionChanged += (_, _) =>
+        {
+            UpdateExternalPluginRegistryButtons(registryList, installRegistry, openRepository);
+            if (registryList.SelectedItem is ExternalPluginRegistryViewItem selected)
+            {
+                registryStatus.Text = FormatExternalPluginRegistryItem(selected.Plan);
+            }
+        };
+
+        refreshRegistry.Click += async (_, _) =>
+            await RefreshExternalPluginRegistryAsync(
+                registryBox,
+                registryList,
+                installRegistry,
+                openRepository,
+                registryStatus);
+
+        installRegistry.Click += async (_, _) =>
+            await InstallSelectedRegistryPluginAsync(
+                registryBox,
+                registryList,
+                installRegistry,
+                openRepository,
+                registryStatus);
+
+        openRepository.Click += (_, _) =>
+        {
+            if (registryList.SelectedItem is not ExternalPluginRegistryViewItem selected ||
+                string.IsNullOrWhiteSpace(selected.Entry.RepositoryUrl))
+            {
+                return;
+            }
+
+            Process.Start(new ProcessStartInfo(selected.Entry.RepositoryUrl) { UseShellExecute = true });
+        };
+
+        importZip.Click += async (_, _) =>
+        {
+            var dialog = new Microsoft.Win32.OpenFileDialog
+            {
+                Title = "Import Weed plugin ZIP",
+                Filter = "Weed plugin packages (*.zip)|*.zip|All files (*.*)|*.*"
+            };
+            if (dialog.ShowDialog(this) == true)
+            {
+                await ImportExternalPluginAsync(dialog.FileName, replaceExisting.IsChecked == true, status);
+            }
+        };
+
+        importFolder.Click += async (_, _) =>
+        {
+            using var dialog = new System.Windows.Forms.FolderBrowserDialog
+            {
+                Description = "Choose a Weed plugin folder that contains manifest.json",
+                UseDescriptionForTitle = true
+            };
+            if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+            {
+                await ImportExternalPluginAsync(dialog.SelectedPath, replaceExisting.IsChecked == true, status);
+            }
+        };
+
+        openFolder.Click += (_, _) =>
+        {
+            Directory.CreateDirectory(_settings.Paths.Plugins);
+            Process.Start(new ProcessStartInfo(_settings.Paths.Plugins) { UseShellExecute = true });
+        };
+
+        return PageShell(
+            "External Plugins",
+            "Install trusted registry plugins or import ZIPs into the user plugin directory. Restart Weed after install or update.",
+            [
+                Section("Registry",
+                    SettingRow("Registry URL", "Trusted plugin index used for install and update checks.", registryBox),
+                    SettingRow("Actions", "Refresh the index, then install or update the selected plugin.", registryActions),
+                    SettingRow("Plugins", "Registered plugins from independent repositories.", registryList),
+                    SettingRow("Registry status", "Selected plugin and install state.", registryStatus)),
+                Section("Import",
+                    SettingRow("Actions", "Import a package or inspect the directory scanned at startup.", actions),
+                    SettingRow("Replace existing", "Allow the importer to replace a plugin folder with the same manifest id.", replaceExisting),
+                    SettingRow("Plugin directory", "External plugins are copied here.", TextValue(_settings.Paths.Plugins)),
+                    SettingRow("Status", "Most recent import result.", status))
+            ]);
+    }
+
+    private async Task RefreshExternalPluginRegistryAsync(
+        System.Windows.Controls.TextBox registryBox,
+        System.Windows.Controls.ListBox registryList,
+        System.Windows.Controls.Button installButton,
+        System.Windows.Controls.Button repositoryButton,
+        TextBlock status)
+    {
+        try
+        {
+            var registryLocation = registryBox.Text.Trim();
+            _settings.SetAppSettings(_settings.AppSettings with { ExternalPluginRegistryUrl = registryLocation });
+            status.Text = "Refreshing plugin registry...";
+            installButton.IsEnabled = false;
+            repositoryButton.IsEnabled = false;
+            registryList.ItemsSource = null;
+
+            var service = new ExternalPluginRegistryService();
+            var registry = await service.ReadRegistryAsync(registryLocation, CancellationToken.None);
+            var items = service.BuildInstallPlans(registry, _settings.Paths.Plugins)
+                .Select(plan => new ExternalPluginRegistryViewItem { Plan = plan })
+                .ToArray();
+            registryList.ItemsSource = items;
+            if (items.Length == 0)
+            {
+                status.Text = "The registry did not list any plugins.";
+                return;
+            }
+
+            registryList.SelectedIndex = 0;
+            if (registryList.SelectedItem is ExternalPluginRegistryViewItem selected)
+            {
+                status.Text = FormatExternalPluginRegistryItem(selected.Plan);
+            }
+            else
+            {
+                status.Text = $"Loaded {items.Length} registry plugin{(items.Length == 1 ? string.Empty : "s")}.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.Error("External plugin registry refresh failed.", ex);
+            status.Text = $"Registry refresh failed: {ex.Message}";
+        }
+        finally
+        {
+            UpdateExternalPluginRegistryButtons(registryList, installButton, repositoryButton);
+        }
+    }
+
+    private async Task InstallSelectedRegistryPluginAsync(
+        System.Windows.Controls.TextBox registryBox,
+        System.Windows.Controls.ListBox registryList,
+        System.Windows.Controls.Button installButton,
+        System.Windows.Controls.Button repositoryButton,
+        TextBlock status)
+    {
+        if (registryList.SelectedItem is not ExternalPluginRegistryViewItem selected)
+        {
+            return;
+        }
+
+        if (!selected.Plan.CanInstall)
+        {
+            status.Text = selected.Plan.Message;
+            return;
+        }
+
+        var confirmation = System.Windows.MessageBox.Show(
+            $"Install {selected.Entry.Name} {selected.Entry.Version}?\n\nExternal plugins run inside Weed and have the same local permissions as the app. Only install plugins you trust.",
+            "Install Weed Plugin",
+            MessageBoxButton.OKCancel,
+            MessageBoxImage.Warning);
+        if (confirmation != MessageBoxResult.OK)
+        {
+            return;
+        }
+
+        try
+        {
+            installButton.IsEnabled = false;
+            repositoryButton.IsEnabled = false;
+            status.Text = $"Downloading {selected.Entry.Name}...";
+            var registryLocation = registryBox.Text.Trim();
+            _settings.SetAppSettings(_settings.AppSettings with { ExternalPluginRegistryUrl = registryLocation });
+            var result = await new ExternalPluginRegistryService().DownloadAndImportAsync(
+                selected.Entry,
+                registryLocation,
+                _settings.Paths.Plugins,
+                Path.Combine(_settings.Paths.Cache, "plugin-downloads"),
+                CancellationToken.None);
+            status.Text = result.TargetDirectory is null
+                ? result.Message
+                : $"{result.Message}{Environment.NewLine}{result.TargetDirectory}";
+            System.Windows.MessageBox.Show(
+                result.Message,
+                "Weed Plugin Install",
+                MessageBoxButton.OK,
+                result.Succeeded ? MessageBoxImage.Information : MessageBoxImage.Warning);
+
+            await RefreshExternalPluginRegistryAsync(
+                registryBox,
+                registryList,
+                installButton,
+                repositoryButton,
+                status);
+        }
+        catch (Exception ex)
+        {
+            _logger.Error("External plugin registry install failed.", ex);
+            status.Text = $"Plugin install failed: {ex.Message}";
+        }
+        finally
+        {
+            UpdateExternalPluginRegistryButtons(registryList, installButton, repositoryButton);
+        }
+    }
+
+    private static void UpdateExternalPluginRegistryButtons(
+        System.Windows.Controls.ListBox registryList,
+        System.Windows.Controls.Button installButton,
+        System.Windows.Controls.Button repositoryButton)
+    {
+        var selected = registryList.SelectedItem as ExternalPluginRegistryViewItem;
+        installButton.IsEnabled = selected?.Plan.CanInstall == true;
+        installButton.Content = selected?.Plan.State == ExternalPluginInstallState.UpdateAvailable ? "Update" : "Install";
+        repositoryButton.IsEnabled = !string.IsNullOrWhiteSpace(selected?.Entry.RepositoryUrl);
+    }
+
+    private static string FormatExternalPluginRegistryItem(ExternalPluginInstallPlan plan)
+    {
+        var lines = new List<string>
+        {
+            plan.Message
+        };
+
+        if (!string.IsNullOrWhiteSpace(plan.Entry.Description))
+        {
+            lines.Add(plan.Entry.Description);
+        }
+
+        if (!string.IsNullOrWhiteSpace(plan.Entry.RepositoryUrl))
+        {
+            lines.Add($"Repository: {plan.Entry.RepositoryUrl}");
+        }
+
+        lines.Add($"Package: {plan.Entry.PackageUrl}");
+        lines.Add($"SHA256: {plan.Entry.Sha256}");
+        return string.Join(Environment.NewLine, lines);
+    }
+
+
+    private async Task ImportExternalPluginAsync(string sourcePath, bool replaceExisting, TextBlock status)
+    {
+        try
+        {
+            status.Text = "Importing plugin...";
+            var result = await new ExternalPluginImporter().ImportAsync(
+                sourcePath,
+                _settings.Paths.Plugins,
+                replaceExisting,
+                CancellationToken.None);
+            status.Text = result.TargetDirectory is null
+                ? result.Message
+                : $"{result.Message}{Environment.NewLine}{result.TargetDirectory}";
+            System.Windows.MessageBox.Show(
+                result.Message,
+                "Weed Plugin Import",
+                MessageBoxButton.OK,
+                result.Succeeded ? MessageBoxImage.Information : MessageBoxImage.Warning);
+        }
+        catch (Exception ex)
+        {
+            _logger.Error("External plugin import failed.", ex);
+            status.Text = $"Import failed: {ex.Message}";
+        }
+    }
+
     private static string FormatUpdateStatus(UpdateCheckResult result)
     {
         if (result.Manifest is null)
@@ -1665,6 +2102,8 @@ public sealed class SettingsWindow : Window
                 BuildPriorityControl(plugin.Manifest.Id)));
         }
 
+        pluginRows.AddRange(BuildKeywordActivationRows(plugin));
+
         return PageShell(
             plugin.Manifest.Name,
             $"{plugin.Manifest.Id}  v{plugin.Manifest.Version}",
@@ -1709,6 +2148,31 @@ public sealed class SettingsWindow : Window
         return priorityControl;
     }
 
+    private IEnumerable<UIElement> BuildKeywordActivationRows(LoadedPlugin plugin)
+    {
+        foreach (var activation in plugin.Manifest.Activations.Where(a =>
+                     a.Type.Equals("keyword", StringComparison.OrdinalIgnoreCase) &&
+                     !string.IsNullOrWhiteSpace(a.Keyword)))
+        {
+            var fallback = TextNormalizer.Normalize(activation.Keyword ?? string.Empty);
+            var key = ActivationSettings.KeywordSettingKey(activation);
+            var current = ActivationSettings.NormalizeKeyword(
+                _settings.GetPluginSetting(plugin.Manifest.Id, key, fallback),
+                fallback);
+            var input = StyledTextBox(current, 140);
+            input.LostFocus += (_, _) =>
+            {
+                var normalized = ActivationSettings.NormalizeKeyword(input.Text, fallback);
+                input.Text = normalized;
+                _settings.SetPluginSetting(plugin.Manifest.Id, key, normalized);
+            };
+
+            var title = activation.Command is null ? "Keyword" : $"Keyword: {activation.Command}";
+            var description = $"Default keyword: {fallback}. Type this prefix in the launcher to invoke this plugin.";
+            yield return SettingRow(title, description, input);
+        }
+    }
+
     private static bool SupportsImplicitQuery(LoadedPlugin plugin) =>
         ShouldShowPriorityControl(plugin.Manifest);
 
@@ -1722,8 +2186,10 @@ public sealed class SettingsWindow : Window
         {
             Content = text,
             MinWidth = 82,
-            Height = 30,
+            MinHeight = 34,
             Padding = new Thickness(12, 4, 12, 4),
+            FontSize = 13,
+            VerticalContentAlignment = VerticalAlignment.Center,
             HorizontalAlignment = System.Windows.HorizontalAlignment.Right
         };
         button.Click += async (_, _) =>
