@@ -38,7 +38,7 @@ public partial class App : System.Windows.Application
         HookCrashLogging(_logger);
         _logger.Info("Weed starting.");
 
-        var clipboard = new WindowsClipboardService();
+        var clipboard = new WindowsClipboardService(_logger);
         var shell = new WindowsShellService(clipboard);
         var screenCapture = new WindowsScreenCaptureService(paths.Screenshots, _settings);
         var host = new WeedHost(_logger, _settings, _settings, clipboard, shell, screenCapture);

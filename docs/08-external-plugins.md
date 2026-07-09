@@ -92,11 +92,17 @@ dependency DLLs or runtime assets.
 
 ## Import Design
 
-Weed Settings > External Plugins supports importing:
+Weed Settings > External Plugins imports local plugin artifacts into the user plugin directory. It does
+not require a registry URL. Supported imports:
 
 - a `.zip` package whose root contains `manifest.json`
 - a folder whose root contains `manifest.json`
 - a `.zip` or folder with a single child directory containing `manifest.json`
+- a source folder with `manifest.json` and one plugin `.csproj`; Weed runs `dotnet publish` and imports
+  the published output
+- a `.dll` file with a matching `manifest.json` next to it
+- a `.dll` file that contains a public `IWeedPlugin` implementation; if the plugin type exposes a
+  static `Manifest` property or field, Weed uses it, otherwise it generates a minimal manifest
 
 The importer:
 
@@ -106,6 +112,10 @@ The importer:
 4. Copies the package to `%LOCALAPPDATA%\Weed\plugins\<manifest.id>`.
 5. Optionally replaces an existing plugin folder with the same id.
 6. Leaves the plugin unloaded until the next Weed restart.
+
+For source folders, the importer publishes with the current Windows runtime identifier, Release
+configuration, and `--self-contained false`. If multiple `.csproj` files are present, name the plugin
+project after the manifest `assembly` value or import the project folder directly.
 
 Manual import is also supported:
 
@@ -140,53 +150,17 @@ Compress-Archive -Path .\dist\example.plugin\* -DestinationPath .\example.plugin
 The GitHub Release should upload:
 
 - `<plugin-id>-<version>-win-x64.zip`
-- optional release metadata JSON with `id`, `version`, `sdkVersion`, `minWeedVersion`, `packageUrl`, `sha256`, and `releaseNotesUrl`
+- optional release notes or checksums for users who want to verify downloads
 
-The package SHA256 is required for registry installs:
+To publish a checksum:
 
 ```powershell
 (Get-FileHash -Algorithm SHA256 .\example.plugin-0.1.0-win-x64.zip).Hash.ToLowerInvariant()
 ```
 
-## Registry Install And Updates
-
-Weed reads a trusted plugin registry from Settings > External Plugins. The default location is:
-
-```text
-https://raw.githubusercontent.com/wky/Weed/master/plugins.registry.json
-```
-
-The registry schema lives at `schemas\plugin-registry.schema.json`. A registry entry points to the
-plugin repository Release ZIP and includes the expected SHA256. Weed downloads the ZIP, verifies the
-hash, imports it with the same importer used for manual ZIP installs, and prompts for a restart. If a
-local plugin with the same id has an older manifest version, the Settings page shows an update action.
-
-Example:
-
-```json
-{
-  "schemaVersion": "1",
-  "plugins": [
-    {
-      "id": "example.plugin",
-      "name": "Example Plugin",
-      "description": "Short plugin summary.",
-      "version": "0.1.0",
-      "sdkVersion": "0.1",
-      "minWeedVersion": "0.1.0",
-      "packageUrl": "https://github.com/wky/weed-plugin-example/releases/download/v0.1.0/example.plugin-0.1.0-win-x64.zip",
-      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
-      "repositoryUrl": "https://github.com/wky/weed-plugin-example",
-      "releaseNotesUrl": "https://github.com/wky/weed-plugin-example/releases/tag/v0.1.0",
-      "trusted": true,
-      "tags": ["example"]
-    }
-  ]
-}
-```
-
-Registry plugins are still normal in-process plugins. Only install plugins you trust; declared
-permissions are descriptive and are not a sandbox.
+Users install by downloading the ZIP, DLL, or source folder and choosing Import in Settings >
+External Plugins. External plugins are normal in-process plugins. Only import plugins you trust;
+declared permissions are descriptive and are not a sandbox.
 
 ## OCR External Plugin
 

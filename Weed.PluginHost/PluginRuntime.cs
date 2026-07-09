@@ -27,7 +27,7 @@ public sealed class PluginRuntime : IAsyncDisposable
         try
         {
             await plugin.InitializeAsync(_host, cancellationToken);
-            _plugins.Add(ToLoadedPlugin(manifest, plugin));
+            _plugins.Add(ToLoadedPlugin(manifest, plugin, PluginSource.BuiltIn, null));
             _logger.Info($"Loaded built-in plugin {manifest.Id}.");
         }
         catch (Exception ex)
@@ -82,7 +82,7 @@ public sealed class PluginRuntime : IAsyncDisposable
 
                 var plugin = (IWeedPlugin)Activator.CreateInstance(type)!;
                 await plugin.InitializeAsync(_host, cancellationToken);
-                _plugins.Add(ToLoadedPlugin(manifest, plugin));
+                _plugins.Add(ToLoadedPlugin(manifest, plugin, PluginSource.External, pluginDirectory));
                 _loadContexts.Add(context);
                 _logger.Info($"Loaded external plugin {manifest.Id}.");
             }
@@ -147,12 +147,18 @@ public sealed class PluginRuntime : IAsyncDisposable
         }
     }
 
-    private static LoadedPlugin ToLoadedPlugin(WeedPluginManifest manifest, IWeedPlugin plugin) => new(
+    private static LoadedPlugin ToLoadedPlugin(
+        WeedPluginManifest manifest,
+        IWeedPlugin plugin,
+        PluginSource source,
+        string? pluginDirectory) => new(
         manifest,
         plugin,
         plugin as IQueryProvider,
         plugin as ICommandHandler,
-        plugin as IResidentPlugin);
+        plugin as IResidentPlugin,
+        source,
+        pluginDirectory);
 
     private static bool IsIgnoredPluginPath(string pluginsDirectory, string manifestPath)
     {

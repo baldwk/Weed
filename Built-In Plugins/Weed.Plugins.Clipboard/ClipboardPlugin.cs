@@ -12,6 +12,9 @@ public sealed class ClipboardPlugin : IWeedPlugin, IQueryProvider, ICommandHandl
 {
     public const string PluginId = "weed.clipboard";
     private const int MaxResultPreviewTextLength = 2000;
+    private const int DefaultResultLimit = 100;
+    private const int MinResultLimit = 10;
+    private const int MaxResultLimit = 1000;
     private readonly List<ClipboardItem> _items = [];
     private readonly object _gate = new();
     private IWeedHost? _host;
@@ -108,6 +111,16 @@ public sealed class ClipboardPlugin : IWeedPlugin, IQueryProvider, ICommandHandl
         },
         new()
         {
+            Key = "resultLimit",
+            Label = "Search result limit",
+            Kind = PluginSettingKind.Integer,
+            Description = "Maximum clipboard results returned to the launcher.",
+            DefaultValue = $"{DefaultResultLimit}",
+            Min = MinResultLimit,
+            Max = MaxResultLimit
+        },
+        new()
+        {
             Key = "maxObjectMegabytes",
             Label = "Object storage MB",
             Kind = PluginSettingKind.Integer,
@@ -153,14 +166,15 @@ public sealed class ClipboardPlugin : IWeedPlugin, IQueryProvider, ICommandHandl
     public ValueTask<IReadOnlyList<WeedResult>> QueryAsync(QueryContext context, CancellationToken cancellationToken)
     {
         var query = context.NormalizedText;
-        var source = string.IsNullOrWhiteSpace(query) ? RecentItems(200) : SearchItems(query, 200);
+        var resultLimit = ResultLimit();
+        var source = string.IsNullOrWhiteSpace(query) ? RecentItems(resultLimit) : SearchItems(query, resultLimit);
         var results = source
             .Select(item => (Item: item, Score: Score(item, query)))
             .Where(item => item.Score > 0)
             .OrderByDescending(item => item.Item.Pinned)
             .ThenByDescending(item => item.Score)
             .ThenByDescending(item => item.Item.CreatedAt)
-            .Take(30)
+            .Take(resultLimit)
             .Select(item => ToResult(item.Item, item.Score))
             .ToArray();
 
@@ -815,6 +829,11 @@ public sealed class ClipboardPlugin : IWeedPlugin, IQueryProvider, ICommandHandl
 
     private int MaxItems() =>
         Math.Clamp(_host?.Settings.GetPluginSetting(PluginId, "maxItems", 100000) ?? 100000, 100, 100000);
+
+    private int ResultLimit() =>
+        Math.Clamp(_host?.Settings.GetPluginSetting(PluginId, "resultLimit", DefaultResultLimit) ?? DefaultResultLimit,
+            MinResultLimit,
+            MaxResultLimit);
 
     private long MaxObjectBytes() =>
         Math.Clamp(_host?.Settings.GetPluginSetting(PluginId, "maxObjectMegabytes", 2048) ?? 2048, 16, 20480) *

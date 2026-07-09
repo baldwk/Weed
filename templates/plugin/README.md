@@ -12,8 +12,8 @@ dotnet publish .\Example.Plugin.csproj -c Release -r win-x64 --self-contained fa
 5. Put `manifest.json` in the published folder root.
 6. Zip the contents of the published folder, not the parent folder.
 7. Publish the ZIP to the plugin repository's GitHub Releases.
-8. Add a registry entry with the ZIP URL and SHA256, or import the ZIP from Weed Settings > External Plugins.
+8. Import the ZIP, DLL, or source folder from Weed Settings > External Plugins.
 9. Restart Weed.
 
 The host scans plugin manifests on startup and loads each managed DLL in its own `AssemblyLoadContext`.
-See `docs\08-external-plugins.md` for the full independent repository and registry workflow.
+See `docs\08-external-plugins.md` for the full external plugin workflow.

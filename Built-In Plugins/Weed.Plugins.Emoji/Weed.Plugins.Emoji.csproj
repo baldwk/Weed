@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\Weed.Abstractions\Weed.Abstractions.csproj" />
+    <EmbeddedResource Include="emoji-test.txt" LogicalName="Weed.Plugins.Emoji.emoji-test.txt" />
   </ItemGroup>
 
   <PropertyGroup>

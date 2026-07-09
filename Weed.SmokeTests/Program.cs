@@ -118,6 +118,10 @@ var emojiCopy = await router.ExecuteAsync(rocket!.Result, rocket.Result.DefaultC
 Require(emojiCopy.Succeeded && host.Clipboard.Text == "🚀", "Emoji Search default action should copy the emoji");
 var heart = await router.QueryAsync("emoji heart", CancellationToken.None);
 Require(heart.Any(r => r.Result.PluginId == EmojiPlugin.PluginId && r.Result.Title.Contains("heart", StringComparison.OrdinalIgnoreCase)), "Emoji Search should match aliases and names");
+var coffee = await router.QueryAsync("emoji coffee", CancellationToken.None);
+Require(coffee.Any(r => r.Result.PluginId == EmojiPlugin.PluginId && r.Result.Data.TryGetValue("emoji", out var coffeeValue) && coffeeValue == "\u2615"), "Emoji Search should match common aliases from Unicode data");
+var lightBlueHeart = await router.QueryAsync("emoji light blue heart", CancellationToken.None);
+Require(lightBlueHeart.Any(r => r.Result.PluginId == EmojiPlugin.PluginId && r.Result.Data.TryGetValue("emoji", out var lightBlueHeartValue) && lightBlueHeartValue == "\U0001FA75"), "Emoji Search should include the full Unicode emoji set");
 
 var translation = await router.QueryAsync("tr en zh HELLO Weed", CancellationToken.None);
 var translationTarget = translation.FirstOrDefault(r => r.Result.PluginId == TranslatePlugin.PluginId && r.Result.Title == "你好 Weed");
@@ -312,12 +316,13 @@ var appLauncherSettings = ((IPluginSettingsProvider)appLauncherPlugin).GetSettin
 Require(appLauncherSettings.Count == 1 && appLauncherSettings.Any(s => s.Key == "hideMaintenanceShortcuts"), "AppLauncher should only expose filter setting");
 Require(appLauncherSettings.All(s => s.Key != "maxResults"), "AppLauncher should hide advanced max results setting");
 var clipboardSettings = ((IPluginSettingsProvider)clipboardPlugin).GetSettings();
-Require(clipboardSettings.Count == 5 &&
+Require(clipboardSettings.Count == 6 &&
         clipboardSettings.Any(s => s.Key == "captureImages") &&
         clipboardSettings.Any(s => s.Key == "captureFileLists") &&
         clipboardSettings.Any(s => s.Key == "retentionDays") &&
         clipboardSettings.Any(s => s.Key == "maxItems") &&
-        clipboardSettings.Any(s => s.Key == "maxObjectMegabytes"), "Clipboard should expose capture, retention, and object quota settings");
+        clipboardSettings.Any(s => s.Key == "resultLimit") &&
+        clipboardSettings.Any(s => s.Key == "maxObjectMegabytes"), "Clipboard should expose capture, retention, result limit, and object quota settings");
 Require(((IPluginSettingsProvider)calculatorPlugin).GetSettings().Count == 0, "Calculator should not expose visible plugin settings");
 var screenshotSettings = ((IPluginSettingsProvider)screenshotPlugin).GetSettings();
 Require(screenshotSettings.Count == 6 &&
@@ -656,12 +661,68 @@ static async Task VerifyExternalPluginImportAsync(string root, AppPaths paths)
     var duplicateResult = await importer.ImportAsync(source, paths.Plugins, overwrite: false, CancellationToken.None);
     Require(!duplicateResult.Succeeded, "external plugin import should reject duplicates without replace");
 
+    var dllPluginsRoot = Path.Combine(root, "dll-plugins");
+    var dllResult = await importer.ImportAsync(Path.Combine(source, "Example.External.dll"), dllPluginsRoot, overwrite: false, CancellationToken.None);
+    Require(dllResult.Succeeded, "external plugin DLL import should use the manifest next to the selected DLL");
+    Require(File.Exists(Path.Combine(dllPluginsRoot, "example.external", "manifest.json")), "external plugin DLL import should copy the manifest");
+
     var zipPath = Path.Combine(root, "example-external.zip");
     ZipFile.CreateFromDirectory(source, zipPath);
     var zipPluginsRoot = Path.Combine(root, "zip-plugins");
     var zipResult = await importer.ImportAsync(zipPath, zipPluginsRoot, overwrite: false, CancellationToken.None);
     Require(zipResult.Succeeded, "external plugin ZIP import should succeed");
     Require(File.Exists(Path.Combine(zipPluginsRoot, "example.external", "manifest.json")), "external plugin ZIP import should copy the manifest");
+
+    var sourceProject = Path.Combine(root, "external-plugin-project");
+    Directory.CreateDirectory(sourceProject);
+    await File.WriteAllTextAsync(Path.Combine(sourceProject, "manifest.json"), """
+    {
+      "id": "source.external",
+      "name": "Source External",
+      "version": "0.1.0",
+      "sdkVersion": "0.1",
+      "assembly": "Source.External.dll",
+      "entryType": "Source.External.Plugin",
+      "activations": []
+    }
+    """);
+    await File.WriteAllTextAsync(Path.Combine(sourceProject, "Source.External.csproj"), $$"""
+    <Project Sdk="Microsoft.NET.Sdk">
+      <PropertyGroup>
+        <TargetFramework>net9.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+      </PropertyGroup>
+      <ItemGroup>
+        <Reference Include="Weed.Abstractions">
+          <HintPath>{{Path.Combine(AppContext.BaseDirectory, "Weed.Abstractions.dll")}}</HintPath>
+          <Private>false</Private>
+        </Reference>
+      </ItemGroup>
+      <ItemGroup>
+        <Content Include="manifest.json">
+          <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+          <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+        </Content>
+      </ItemGroup>
+    </Project>
+    """);
+    await File.WriteAllTextAsync(Path.Combine(sourceProject, "Plugin.cs"), """
+    using Weed.Abstractions;
+
+    namespace Source.External;
+
+    public sealed class Plugin : IWeedPlugin
+    {
+        public ValueTask InitializeAsync(IWeedHost host, CancellationToken cancellationToken) => ValueTask.CompletedTask;
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+    """);
+    var sourcePluginsRoot = Path.Combine(root, "source-plugins");
+    var sourceResult = await importer.ImportAsync(sourceProject, sourcePluginsRoot, overwrite: false, CancellationToken.None);
+    Require(sourceResult.Succeeded, "external plugin source folder import should publish and copy the plugin");
+    Require(File.Exists(Path.Combine(sourcePluginsRoot, "source.external", "Source.External.dll")), "external plugin source import should publish the assembly");
 
     var registryHash = ExternalPluginRegistryService.Sha256File(zipPath);
     var registryPath = Path.Combine(root, "plugin-registry.json");

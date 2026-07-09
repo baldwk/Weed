@@ -4,6 +4,7 @@ using System.Drawing.Imaging;
 using System.Collections.Specialized;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -20,6 +21,22 @@ namespace Weed.Platform.Windows;
 
 public sealed class WindowsClipboardService : IWeedClipboard
 {
+    private static readonly TimeSpan[] ClipboardRetryDelays =
+    [
+        TimeSpan.FromMilliseconds(40),
+        TimeSpan.FromMilliseconds(80),
+        TimeSpan.FromMilliseconds(140),
+        TimeSpan.FromMilliseconds(220),
+        TimeSpan.FromMilliseconds(320)
+    ];
+
+    private readonly IWeedLogger? _logger;
+
+    public WindowsClipboardService(IWeedLogger? logger = null)
+    {
+        _logger = logger;
+    }
+
     public async ValueTask<ClipboardSnapshot?> TryReadAsync(CancellationToken cancellationToken)
     {
         return await InvokeOnDispatcherAsync(() =>
@@ -121,24 +138,25 @@ public sealed class WindowsClipboardService : IWeedClipboard
 
     public async ValueTask SetTextAsync(string text, CancellationToken cancellationToken)
     {
-        await InvokeOnDispatcherAsync(() =>
-        {
-            System.Windows.Clipboard.SetText(text);
-            return true;
-        }, cancellationToken);
+        await SetClipboardWithRetryAsync(
+            () => System.Windows.Clipboard.SetText(text),
+            "set text",
+            cancellationToken);
     }
 
     public async ValueTask SetFilesAsync(IReadOnlyList<string> files, CancellationToken cancellationToken)
     {
-        await InvokeOnDispatcherAsync(() =>
-        {
-            var collection = new StringCollection();
-            collection.AddRange(files.ToArray());
-            var data = new System.Windows.DataObject();
-            data.SetFileDropList(collection);
-            System.Windows.Clipboard.SetDataObject(data, true);
-            return true;
-        }, cancellationToken);
+        await SetClipboardWithRetryAsync(
+            () =>
+            {
+                var collection = new StringCollection();
+                collection.AddRange(files.ToArray());
+                var data = new System.Windows.DataObject();
+                data.SetFileDropList(collection);
+                System.Windows.Clipboard.SetDataObject(data, true);
+            },
+            "set files",
+            cancellationToken);
     }
 
     public async ValueTask PasteTextAsync(string text, CancellationToken cancellationToken)
@@ -155,7 +173,7 @@ public sealed class WindowsClipboardService : IWeedClipboard
 
     public async ValueTask SetImageAsync(string imagePath, CancellationToken cancellationToken)
     {
-        await InvokeOnDispatcherAsync(() =>
+        var image = await InvokeOnDispatcherAsync(() =>
         {
             var image = new BitmapImage();
             image.BeginInit();
@@ -163,39 +181,101 @@ public sealed class WindowsClipboardService : IWeedClipboard
             image.UriSource = new Uri(imagePath);
             image.EndInit();
             image.Freeze();
-            SetClipboardImageWithRetry(image, cancellationToken);
-            return true;
+            return (BitmapSource)image;
         }, cancellationToken);
+
+        await SetClipboardWithRetryAsync(
+            () => System.Windows.Clipboard.SetImage(image),
+            "set image",
+            cancellationToken);
     }
 
-    private static void SetClipboardImageWithRetry(BitmapSource image, CancellationToken cancellationToken)
+    private async ValueTask SetClipboardWithRetryAsync(
+        Action action,
+        string operation,
+        CancellationToken cancellationToken)
     {
         Exception? lastError = null;
-        for (var attempt = 0; attempt < 5; attempt++)
+        var lastOwner = "unknown";
+        for (var attempt = 0; attempt <= ClipboardRetryDelays.Length; attempt++)
         {
             cancellationToken.ThrowIfCancellationRequested();
             try
             {
-                System.Windows.Clipboard.SetImage(image);
+                await InvokeOnDispatcherAsync(() =>
+                {
+                    action();
+                    return true;
+                }, cancellationToken);
+
+                if (attempt > 0)
+                {
+                    _logger?.Info($"Clipboard {operation} succeeded after {attempt + 1} attempts. Last busy owner: {lastOwner}");
+                }
+
                 return;
             }
-            catch (COMException ex)
+            catch (Exception ex) when (IsClipboardUnavailable(ex) && attempt < ClipboardRetryDelays.Length)
             {
                 lastError = ex;
+                lastOwner = DescribeOpenClipboardOwner();
+                await Task.Delay(ClipboardRetryDelays[attempt], cancellationToken);
             }
-            catch (ExternalException ex)
-            {
-                lastError = ex;
-            }
-
-            Thread.Sleep(60);
         }
 
         if (lastError is not null)
         {
+            _logger?.Warn($"Clipboard {operation} failed because the clipboard is busy: {lastError.Message}. Last busy owner: {lastOwner}");
             throw lastError;
         }
     }
+
+    private static bool IsClipboardUnavailable(Exception exception) =>
+        exception is COMException { ErrorCode: unchecked((int)0x800401D0) } ||
+        exception is ExternalException { ErrorCode: unchecked((int)0x800401D0) };
+
+    private static string DescribeOpenClipboardOwner()
+    {
+        var hwnd = GetOpenClipboardWindow();
+        if (hwnd == IntPtr.Zero)
+        {
+            return "no open clipboard window";
+        }
+
+        GetWindowThreadProcessId(hwnd, out var processId);
+        var title = new StringBuilder(256);
+        GetWindowText(hwnd, title, title.Capacity);
+        var process = ProcessName(processId);
+        var windowTitle = title.Length == 0 ? "untitled window" : title.ToString();
+        return $"{process}, hwnd 0x{hwnd.ToInt64():X}, title \"{windowTitle}\"";
+    }
+
+    private static string ProcessName(uint processId)
+    {
+        if (processId == 0 || processId > int.MaxValue)
+        {
+            return $"pid {processId}";
+        }
+
+        try
+        {
+            using var process = Process.GetProcessById((int)processId);
+            return $"{process.ProcessName} (pid {processId})";
+        }
+        catch
+        {
+            return $"pid {processId}";
+        }
+    }
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetOpenClipboardWindow();
+
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetWindowText(IntPtr hWnd, StringBuilder text, int count);
 
     private static byte[] EncodePng(BitmapSource image)
     {
@@ -2003,7 +2083,7 @@ internal sealed class ScreenshotSnapshotOverlay : Window
             return;
         }
 
-        Cursor = System.Windows.Input.Cursors.Hand;
+        Cursor = System.Windows.Input.Cursors.Cross;
         ShowWindowTarget(target);
     }
 

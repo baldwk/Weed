@@ -3,12 +3,20 @@ using IQueryProvider = Weed.Abstractions.IQueryProvider;
 
 namespace Weed.Core;
 
+public enum PluginSource
+{
+    BuiltIn,
+    External
+}
+
 public sealed record LoadedPlugin(
     WeedPluginManifest Manifest,
     IWeedPlugin Instance,
     IQueryProvider? QueryProvider,
     ICommandHandler? CommandHandler,
-    IResidentPlugin? ResidentPlugin);
+    IResidentPlugin? ResidentPlugin,
+    PluginSource Source = PluginSource.BuiltIn,
+    string? PluginDirectory = null);
 
 public sealed record RankedResult(
     WeedResult Result,
@@ -96,6 +104,7 @@ public sealed class QueryRouter
         var plugin = _plugins.FirstOrDefault(p => p.Manifest.Id.Equals(result.PluginId, StringComparison.OrdinalIgnoreCase));
         if (plugin?.CommandHandler is null)
         {
+            _logger?.Warn($"No command handler for {result.PluginId} while executing {command}.");
             return CommandResult.Failed($"No command handler for {result.PluginId}.");
         }
 
@@ -106,10 +115,16 @@ public sealed class QueryRouter
             ResultId = result.Id,
             Data = result.Data
         };
+        _logger?.Info($"Executing command {result.PluginId}/{result.Id}: {command}");
         var commandResult = await plugin.CommandHandler.ExecuteAsync(context, cancellationToken);
         if (commandResult.Succeeded)
         {
             _usage.Record(result.PluginId, result.Id, command);
+            _logger?.Info($"Command succeeded {result.PluginId}/{result.Id}: {command}");
+        }
+        else
+        {
+            _logger?.Warn($"Command failed {result.PluginId}/{result.Id}: {command}: {commandResult.Message}");
         }
 
         return commandResult;
@@ -124,15 +139,27 @@ public sealed class QueryRouter
         var plugin = _plugins.FirstOrDefault(p => p.Manifest.Id.Equals(pluginId, StringComparison.OrdinalIgnoreCase));
         if (plugin?.CommandHandler is null)
         {
+            _logger?.Warn($"No command handler for {pluginId} while executing {command}.");
             return CommandResult.Failed($"No command handler for {pluginId}.");
         }
 
-        return await plugin.CommandHandler.ExecuteAsync(new CommandContext
+        _logger?.Info($"Executing plugin command {pluginId}: {command}");
+        var commandResult = await plugin.CommandHandler.ExecuteAsync(new CommandContext
         {
             PluginId = pluginId,
             Command = command,
             Data = data ?? new Dictionary<string, string>()
         }, cancellationToken);
+        if (commandResult.Succeeded)
+        {
+            _logger?.Info($"Plugin command succeeded {pluginId}: {command}");
+        }
+        else
+        {
+            _logger?.Warn($"Plugin command failed {pluginId}: {command}: {commandResult.Message}");
+        }
+
+        return commandResult;
     }
 
     private (LoadedPlugin Plugin, PluginActivationManifest Activation, (string Raw, string Normalized) Remaining)? TryMatchKeyword(string rawText, string normalized)

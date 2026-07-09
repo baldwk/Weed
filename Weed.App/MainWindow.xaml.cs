@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
@@ -575,27 +576,41 @@ public partial class MainWindow : Window
         try
         {
             _state.Status = "Running";
+            _logger.Info($"Command started: {selected.Result.Result.PluginId}/{selected.Result.Result.Id} -> {command}");
             var result = await _router.ExecuteAsync(selected.Result.Result, command, CancellationToken.None);
-            if (!string.IsNullOrWhiteSpace(result.Message))
+
+            if (!result.Succeeded)
             {
-                _state.Status = result.Message;
+                var message = string.IsNullOrWhiteSpace(result.Message)
+                    ? "Command failed"
+                    : result.Message;
+                _logger.Warn($"Command returned failure: {selected.Result.Result.PluginId}/{selected.Result.Result.Id} -> {command}: {message}");
+                _state.Status = message;
+                return;
             }
 
             if (result.Behavior == CommandBehavior.CloseLauncher)
             {
                 Hide();
+                return;
             }
-            else if (result.Behavior == CommandBehavior.ShowLauncher)
+
+            if (result.Behavior == CommandBehavior.ShowLauncher)
             {
                 ShowLauncher(result.InitialQuery);
+                return;
             }
 
             await RefreshResultsAsync();
+            if (!string.IsNullOrWhiteSpace(result.Message))
+            {
+                _state.Status = result.Message;
+            }
         }
         catch (Exception ex)
         {
             _logger.Error($"Command failed: {command}", ex);
-            _state.Status = "Command failed";
+            _state.Status = $"Command failed: {ex.Message}";
         }
     }
 
@@ -1003,27 +1018,15 @@ public sealed class SettingsWindow : Window
 
     private sealed record SettingsNavItem(string Id, string Title, string Icon, LoadedPlugin? Plugin = null);
 
-    private sealed class ExternalPluginRegistryViewItem
+    private sealed class ExternalPluginInstallViewItem
     {
-        public required ExternalPluginInstallPlan Plan { get; init; }
+        public required WeedPluginManifest Manifest { get; init; }
 
-        public ExternalPluginRegistryEntry Entry => Plan.Entry;
+        public required string Directory { get; init; }
 
-        public string Display
-        {
-            get
-            {
-                var state = Plan.State switch
-                {
-                    ExternalPluginInstallState.NotInstalled => "Not installed",
-                    ExternalPluginInstallState.UpdateAvailable => "Update available",
-                    ExternalPluginInstallState.Installed => "Installed",
-                    ExternalPluginInstallState.Incompatible => "Incompatible",
-                    _ => "Invalid"
-                };
-                return $"{Entry.Name} {Entry.Version} - {state}";
-            }
-        }
+        public bool IsLoaded { get; init; }
+
+        public string Display => $"{Manifest.Name} {Manifest.Version} - {(IsLoaded ? "Loaded" : "Restart required")}";
     }
 
     private UIElement BuildContent()
@@ -1079,19 +1082,28 @@ public sealed class SettingsWindow : Window
         AddNavButton(nav, new SettingsNavItem("general", "General", "M5,12 H19 M12,5 V19 M7,7 L17,17 M17,7 L7,17"));
         AddNavButton(nav, new SettingsNavItem("hotkeys", "Hotkeys", "M4,7 H20 V17 H4 Z M7,10 H9 M11,10 H13 M15,10 H17 M7,14 H17"));
         AddNavButton(nav, new SettingsNavItem("updates", "Updates", "M12,4 V16 M7,11 L12,16 L17,11 M5,20 H19"));
+        AddNavButton(nav, new SettingsNavItem("logs", "Logs", "M6,4 H18 V20 H6 Z M9,8 H15 M9,12 H15 M9,16 H13"));
         AddNavButton(nav, new SettingsNavItem("externalPlugins", "External Plugins", "M12,3 V15 M7,10 L12,15 L17,10 M5,21 H19 M5,17 H19"));
 
-        nav.Children.Add(new TextBlock
-        {
-            Text = "BUILT-IN PLUGINS",
-            Foreground = (System.Windows.Media.Brush)System.Windows.Application.Current.Resources["TextSecondaryBrush"],
-            FontSize = 11,
-            FontWeight = FontWeights.SemiBold,
-            Margin = new Thickness(8, 22, 0, 8)
-        });
-        foreach (var plugin in _router.Plugins.OrderBy(p => p.Manifest.Name, StringComparer.CurrentCultureIgnoreCase))
+        AddNavHeader(nav, "BUILT-IN PLUGINS");
+        foreach (var plugin in _router.Plugins
+                     .Where(p => p.Source == PluginSource.BuiltIn)
+                     .OrderBy(p => p.Manifest.Name, StringComparer.CurrentCultureIgnoreCase))
         {
             AddNavButton(nav, new SettingsNavItem(plugin.Manifest.Id, plugin.Manifest.Name, string.Empty, plugin));
+        }
+
+        var externalPlugins = _router.Plugins
+            .Where(p => p.Source == PluginSource.External)
+            .OrderBy(p => p.Manifest.Name, StringComparer.CurrentCultureIgnoreCase)
+            .ToArray();
+        if (externalPlugins.Length > 0)
+        {
+            AddNavHeader(nav, "EXTERNAL PLUGINS");
+            foreach (var plugin in externalPlugins)
+            {
+                AddNavButton(nav, new SettingsNavItem(plugin.Manifest.Id, plugin.Manifest.Name, string.Empty, plugin));
+            }
         }
 
         _content.Margin = new Thickness(34, 28, 34, 28);
@@ -1101,6 +1113,18 @@ public sealed class SettingsWindow : Window
         SelectNav(_navButtons.First().Item);
 
         return root;
+    }
+
+    private void AddNavHeader(System.Windows.Controls.Panel nav, string text)
+    {
+        nav.Children.Add(new TextBlock
+        {
+            Text = text,
+            Foreground = (System.Windows.Media.Brush)System.Windows.Application.Current.Resources["TextSecondaryBrush"],
+            FontSize = 11,
+            FontWeight = FontWeights.SemiBold,
+            Margin = new Thickness(8, 22, 0, 8)
+        });
     }
 
     private void AddNavButton(System.Windows.Controls.Panel nav, SettingsNavItem item)
@@ -1132,7 +1156,7 @@ public sealed class SettingsWindow : Window
             Height = 24,
             CornerRadius = new CornerRadius(6),
             Background = Brush("#232834"),
-            Child = item.Plugin is null ? NavPath(item.Icon) : PluginIconElement(item.Plugin.Manifest, 18)
+            Child = item.Plugin is null ? NavPath(item.Icon) : PluginIconElement(item.Plugin, 18)
         });
         var title = new TextBlock
         {
@@ -1183,6 +1207,7 @@ public sealed class SettingsWindow : Window
             {
                 "hotkeys" => BuildHotkeysTab(),
                 "updates" => BuildUpdatesTab(),
+                "logs" => BuildLogsTab(),
                 "externalPlugins" => BuildExternalPluginsTab(),
                 _ => BuildGeneralTab()
             };
@@ -1648,15 +1673,146 @@ public sealed class SettingsWindow : Window
             ]);
     }
 
+    private UIElement BuildLogsTab()
+    {
+        Directory.CreateDirectory(_settings.Paths.Logs);
+
+        var latestStatus = new TextBlock
+        {
+            TextWrapping = TextWrapping.Wrap,
+            TextAlignment = TextAlignment.Right,
+            Foreground = (System.Windows.Media.Brush)System.Windows.Application.Current.Resources["TextSecondaryBrush"]
+        };
+        var tailBox = DiagnosticTextBox(string.Empty, 320);
+        string? latestLog = null;
+
+        void Refresh()
+        {
+            latestLog = LatestLogFile();
+            latestStatus.Text = LogSummary(latestLog);
+            tailBox.Text = ReadLogTail(latestLog, 400);
+            tailBox.ScrollToEnd();
+        }
+
+        var actions = new StackPanel
+        {
+            Orientation = System.Windows.Controls.Orientation.Horizontal
+        };
+        var refresh = PluginCommandButton("Refresh", () =>
+        {
+            Refresh();
+            return Task.CompletedTask;
+        });
+        var openFolder = PluginCommandButton("Open folder", () =>
+        {
+            Directory.CreateDirectory(_settings.Paths.Logs);
+            Process.Start(new ProcessStartInfo(_settings.Paths.Logs) { UseShellExecute = true });
+            return Task.CompletedTask;
+        });
+        var openLatest = PluginCommandButton("Open latest", () =>
+        {
+            latestLog ??= LatestLogFile();
+            if (!string.IsNullOrWhiteSpace(latestLog) && File.Exists(latestLog))
+            {
+                Process.Start(new ProcessStartInfo(latestLog) { UseShellExecute = true });
+            }
+
+            return Task.CompletedTask;
+        });
+        openFolder.Margin = new Thickness(8, 0, 0, 0);
+        openLatest.Margin = new Thickness(8, 0, 0, 0);
+        actions.Children.Add(refresh);
+        actions.Children.Add(openFolder);
+        actions.Children.Add(openLatest);
+
+        Refresh();
+
+        return PageShell(
+            "Logs",
+            "Runtime diagnostics, command history, and plugin errors.",
+            [
+                Section("Storage",
+                    SettingRow("Folder", "Local directory used for rolling log files.", TextValue(_settings.Paths.Logs)),
+                    SettingRow("Latest", "Newest log file and retained size.", latestStatus)),
+                Section("Actions",
+                    SettingRow("Tools", "Refresh the tail or open logs in Explorer.", actions)),
+                Section("Latest Tail",
+                    tailBox)
+            ]);
+    }
+
+    private string? LatestLogFile()
+    {
+        try
+        {
+            return Directory.EnumerateFiles(_settings.Paths.Logs, "weed-*.log")
+                .OrderByDescending(File.GetLastWriteTimeUtc)
+                .FirstOrDefault();
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private string LogSummary(string? latestLog)
+    {
+        try
+        {
+            var files = Directory.EnumerateFiles(_settings.Paths.Logs, "weed-*.log")
+                .Select(path => new FileInfo(path))
+                .Where(file => file.Exists)
+                .OrderByDescending(file => file.LastWriteTimeUtc)
+                .ToArray();
+            if (files.Length == 0)
+            {
+                return "No logs yet.";
+            }
+
+            var totalBytes = files.Sum(file => file.Length);
+            var latestName = string.IsNullOrWhiteSpace(latestLog) ? files[0].Name : Path.GetFileName(latestLog);
+            return $"{latestName}{Environment.NewLine}{files.Length} files, {FormatBytes(totalBytes)} retained";
+        }
+        catch (Exception ex)
+        {
+            return ex.Message;
+        }
+    }
+
+    private static string ReadLogTail(string? path, int lines)
+    {
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+        {
+            return "No logs yet.";
+        }
+
+        try
+        {
+            return string.Join(Environment.NewLine, File.ReadLines(path).TakeLast(lines));
+        }
+        catch (Exception ex)
+        {
+            return ex.ToString();
+        }
+    }
+
+    private static string FormatBytes(long bytes)
+    {
+        string[] units = ["B", "KB", "MB", "GB"];
+        var value = (double)bytes;
+        var unit = 0;
+        while (value >= 1024 && unit < units.Length - 1)
+        {
+            value /= 1024;
+            unit++;
+        }
+
+        return $"{value:0.#} {units[unit]}";
+    }
+
     private UIElement BuildExternalPluginsTab()
     {
-        var registryBox = StyledTextBox(_settings.AppSettings.ExternalPluginRegistryUrl, 420);
-        registryBox.LostFocus += (_, _) => _settings.SetAppSettings(_settings.AppSettings with
-        {
-            ExternalPluginRegistryUrl = registryBox.Text.Trim()
-        });
-
-        var refreshRegistry = new System.Windows.Controls.Button
+        var refreshInstalled = new System.Windows.Controls.Button
         {
             Content = "Refresh",
             Padding = new Thickness(12, 6, 12, 6),
@@ -1664,56 +1820,44 @@ public sealed class SettingsWindow : Window
             FontSize = 13,
             VerticalContentAlignment = VerticalAlignment.Center
         };
-        var installRegistry = new System.Windows.Controls.Button
+        var openFolder = new System.Windows.Controls.Button
         {
-            Content = "Install",
+            Content = "Open folder",
             Padding = new Thickness(12, 6, 12, 6),
             Margin = new Thickness(8, 0, 0, 0),
             MinHeight = 34,
             FontSize = 13,
-            VerticalContentAlignment = VerticalAlignment.Center,
-            IsEnabled = false
+            VerticalContentAlignment = VerticalAlignment.Center
         };
-        var openRepository = new System.Windows.Controls.Button
-        {
-            Content = "Repository",
-            Padding = new Thickness(12, 6, 12, 6),
-            Margin = new Thickness(8, 0, 0, 0),
-            MinHeight = 34,
-            FontSize = 13,
-            VerticalContentAlignment = VerticalAlignment.Center,
-            IsEnabled = false
-        };
-        var registryActions = new StackPanel
+        var installedActions = new StackPanel
         {
             Orientation = System.Windows.Controls.Orientation.Horizontal,
             HorizontalAlignment = System.Windows.HorizontalAlignment.Right
         };
-        registryActions.Children.Add(refreshRegistry);
-        registryActions.Children.Add(installRegistry);
-        registryActions.Children.Add(openRepository);
+        installedActions.Children.Add(refreshInstalled);
+        installedActions.Children.Add(openFolder);
 
-        var registryList = new System.Windows.Controls.ListBox
+        var installedList = new System.Windows.Controls.ListBox
         {
             Width = 420,
-            Height = 210,
-            DisplayMemberPath = nameof(ExternalPluginRegistryViewItem.Display),
+            Height = 190,
+            DisplayMemberPath = nameof(ExternalPluginInstallViewItem.Display),
             Background = Brush("#20242E"),
             BorderBrush = Brush("#343B49"),
             BorderThickness = new Thickness(1),
             Foreground = (System.Windows.Media.Brush)System.Windows.Application.Current.Resources["TextPrimaryBrush"]
         };
-        var registryStatus = new TextBlock
+        var installedStatus = new TextBlock
         {
-            Text = "Refresh the registry to browse trusted external plugins.",
+            Text = "Refresh reads the local external plugin folder.",
             TextWrapping = TextWrapping.Wrap,
             TextAlignment = TextAlignment.Right,
             Foreground = (System.Windows.Media.Brush)System.Windows.Application.Current.Resources["TextSecondaryBrush"]
         };
 
-        var importZip = new System.Windows.Controls.Button
+        var importPackage = new System.Windows.Controls.Button
         {
-            Content = "Import ZIP",
+            Content = "Import package",
             Padding = new Thickness(12, 6, 12, 6),
             MinHeight = 34,
             FontSize = 13,
@@ -1728,23 +1872,13 @@ public sealed class SettingsWindow : Window
             FontSize = 13,
             VerticalContentAlignment = VerticalAlignment.Center
         };
-        var openFolder = new System.Windows.Controls.Button
-        {
-            Content = "Open folder",
-            Padding = new Thickness(12, 6, 12, 6),
-            Margin = new Thickness(8, 0, 0, 0),
-            MinHeight = 34,
-            FontSize = 13,
-            VerticalContentAlignment = VerticalAlignment.Center
-        };
         var actions = new StackPanel
         {
             Orientation = System.Windows.Controls.Orientation.Horizontal,
             HorizontalAlignment = System.Windows.HorizontalAlignment.Right
         };
-        actions.Children.Add(importZip);
+        actions.Children.Add(importPackage);
         actions.Children.Add(importFolder);
-        actions.Children.Add(openFolder);
 
         var replaceExisting = new System.Windows.Controls.CheckBox
         {
@@ -1758,52 +1892,44 @@ public sealed class SettingsWindow : Window
             Foreground = (System.Windows.Media.Brush)System.Windows.Application.Current.Resources["TextSecondaryBrush"]
         };
 
-        registryList.SelectionChanged += (_, _) =>
+        void RefreshInstalled()
         {
-            UpdateExternalPluginRegistryButtons(registryList, installRegistry, openRepository);
-            if (registryList.SelectedItem is ExternalPluginRegistryViewItem selected)
+            var items = ReadExternalPluginInstallations();
+            installedList.ItemsSource = items;
+            if (items.Count == 0)
             {
-                registryStatus.Text = FormatExternalPluginRegistryItem(selected.Plan);
-            }
-        };
-
-        refreshRegistry.Click += async (_, _) =>
-            await RefreshExternalPluginRegistryAsync(
-                registryBox,
-                registryList,
-                installRegistry,
-                openRepository,
-                registryStatus);
-
-        installRegistry.Click += async (_, _) =>
-            await InstallSelectedRegistryPluginAsync(
-                registryBox,
-                registryList,
-                installRegistry,
-                openRepository,
-                registryStatus);
-
-        openRepository.Click += (_, _) =>
-        {
-            if (registryList.SelectedItem is not ExternalPluginRegistryViewItem selected ||
-                string.IsNullOrWhiteSpace(selected.Entry.RepositoryUrl))
-            {
+                installedStatus.Text = "No external plugins found in the local plugin folder.";
                 return;
             }
 
-            Process.Start(new ProcessStartInfo(selected.Entry.RepositoryUrl) { UseShellExecute = true });
+            installedList.SelectedIndex = 0;
+            if (installedList.SelectedItem is ExternalPluginInstallViewItem selected)
+            {
+                installedStatus.Text = FormatExternalPluginInstallItem(selected);
+            }
+        }
+
+        installedList.SelectionChanged += (_, _) =>
+        {
+            if (installedList.SelectedItem is ExternalPluginInstallViewItem selected)
+            {
+                installedStatus.Text = FormatExternalPluginInstallItem(selected);
+            }
         };
 
-        importZip.Click += async (_, _) =>
+        refreshInstalled.Click += (_, _) => RefreshInstalled();
+
+        importPackage.Click += async (_, _) =>
         {
             var dialog = new Microsoft.Win32.OpenFileDialog
             {
-                Title = "Import Weed plugin ZIP",
-                Filter = "Weed plugin packages (*.zip)|*.zip|All files (*.*)|*.*"
+                Title = "Import Weed plugin package or DLL",
+                Filter = "Weed plugin packages (*.zip;*.dll)|*.zip;*.dll|ZIP packages (*.zip)|*.zip|Plugin DLLs (*.dll)|*.dll|All files (*.*)|*.*"
             };
             if (dialog.ShowDialog(this) == true)
             {
                 await ImportExternalPluginAsync(dialog.FileName, replaceExisting.IsChecked == true, status);
+                RefreshInstalled();
             }
         };
 
@@ -1811,12 +1937,13 @@ public sealed class SettingsWindow : Window
         {
             using var dialog = new System.Windows.Forms.FolderBrowserDialog
             {
-                Description = "Choose a Weed plugin folder that contains manifest.json",
+                Description = "Choose a Weed plugin folder, published folder, or source project folder",
                 UseDescriptionForTitle = true
             };
             if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
             {
                 await ImportExternalPluginAsync(dialog.SelectedPath, replaceExisting.IsChecked == true, status);
+                RefreshInstalled();
             }
         };
 
@@ -1826,173 +1953,99 @@ public sealed class SettingsWindow : Window
             Process.Start(new ProcessStartInfo(_settings.Paths.Plugins) { UseShellExecute = true });
         };
 
+        RefreshInstalled();
+
         return PageShell(
             "External Plugins",
-            "Install trusted registry plugins or import ZIPs into the user plugin directory. Restart Weed after install or update.",
+            "Import ZIP packages, plugin DLLs, or source folders into the user plugin directory. Restart Weed after import or replacement.",
             [
-                Section("Registry",
-                    SettingRow("Registry URL", "Trusted plugin index used for install and update checks.", registryBox),
-                    SettingRow("Actions", "Refresh the index, then install or update the selected plugin.", registryActions),
-                    SettingRow("Plugins", "Registered plugins from independent repositories.", registryList),
-                    SettingRow("Registry status", "Selected plugin and install state.", registryStatus)),
+                Section("Installed",
+                    SettingRow("Actions", "Refresh the local list or open the folder scanned at startup.", installedActions),
+                    SettingRow("Plugins", "External plugins installed under the user plugin directory.", installedList),
+                    SettingRow("Status", "Selected plugin and load state.", installedStatus)),
                 Section("Import",
-                    SettingRow("Actions", "Import a package or inspect the directory scanned at startup.", actions),
+                    SettingRow("Actions", "Import a ZIP, DLL, compiled folder, or source folder.", actions),
                     SettingRow("Replace existing", "Allow the importer to replace a plugin folder with the same manifest id.", replaceExisting),
                     SettingRow("Plugin directory", "External plugins are copied here.", TextValue(_settings.Paths.Plugins)),
                     SettingRow("Status", "Most recent import result.", status))
             ]);
     }
 
-    private async Task RefreshExternalPluginRegistryAsync(
-        System.Windows.Controls.TextBox registryBox,
-        System.Windows.Controls.ListBox registryList,
-        System.Windows.Controls.Button installButton,
-        System.Windows.Controls.Button repositoryButton,
-        TextBlock status)
+    private IReadOnlyList<ExternalPluginInstallViewItem> ReadExternalPluginInstallations()
     {
-        try
-        {
-            var registryLocation = registryBox.Text.Trim();
-            _settings.SetAppSettings(_settings.AppSettings with { ExternalPluginRegistryUrl = registryLocation });
-            status.Text = "Refreshing plugin registry...";
-            installButton.IsEnabled = false;
-            repositoryButton.IsEnabled = false;
-            registryList.ItemsSource = null;
+        Directory.CreateDirectory(_settings.Paths.Plugins);
+        var loaded = _router.Plugins
+            .Where(plugin => plugin.Source == PluginSource.External)
+            .Select(plugin => plugin.Manifest.Id)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var items = new List<ExternalPluginInstallViewItem>();
 
-            var service = new ExternalPluginRegistryService();
-            var registry = await service.ReadRegistryAsync(registryLocation, CancellationToken.None);
-            var items = service.BuildInstallPlans(registry, _settings.Paths.Plugins)
-                .Select(plan => new ExternalPluginRegistryViewItem { Plan = plan })
-                .ToArray();
-            registryList.ItemsSource = items;
-            if (items.Length == 0)
+        foreach (var manifestPath in Directory.EnumerateFiles(_settings.Paths.Plugins, "manifest.json", SearchOption.AllDirectories))
+        {
+            if (IsIgnoredExternalPluginPath(_settings.Paths.Plugins, manifestPath))
             {
-                status.Text = "The registry did not list any plugins.";
-                return;
+                continue;
             }
 
-            registryList.SelectedIndex = 0;
-            if (registryList.SelectedItem is ExternalPluginRegistryViewItem selected)
+            try
             {
-                status.Text = FormatExternalPluginRegistryItem(selected.Plan);
+                var manifest = JsonSerializer.Deserialize<WeedPluginManifest>(
+                    File.ReadAllText(manifestPath),
+                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                if (manifest is null || string.IsNullOrWhiteSpace(manifest.Id))
+                {
+                    continue;
+                }
+
+                items.Add(new ExternalPluginInstallViewItem
+                {
+                    Manifest = manifest,
+                    Directory = Path.GetDirectoryName(manifestPath) ?? _settings.Paths.Plugins,
+                    IsLoaded = loaded.Contains(manifest.Id)
+                });
             }
-            else
+            catch (Exception ex)
             {
-                status.Text = $"Loaded {items.Length} registry plugin{(items.Length == 1 ? string.Empty : "s")}.";
+                _logger.Warn($"Skipped malformed external plugin manifest at {manifestPath}: {ex.Message}");
             }
         }
-        catch (Exception ex)
-        {
-            _logger.Error("External plugin registry refresh failed.", ex);
-            status.Text = $"Registry refresh failed: {ex.Message}";
-        }
-        finally
-        {
-            UpdateExternalPluginRegistryButtons(registryList, installButton, repositoryButton);
-        }
+
+        return items
+            .OrderBy(item => item.Manifest.Name, StringComparer.CurrentCultureIgnoreCase)
+            .ThenBy(item => item.Manifest.Id, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
     }
 
-    private async Task InstallSelectedRegistryPluginAsync(
-        System.Windows.Controls.TextBox registryBox,
-        System.Windows.Controls.ListBox registryList,
-        System.Windows.Controls.Button installButton,
-        System.Windows.Controls.Button repositoryButton,
-        TextBlock status)
+    private static bool IsIgnoredExternalPluginPath(string pluginsRoot, string manifestPath)
     {
-        if (registryList.SelectedItem is not ExternalPluginRegistryViewItem selected)
-        {
-            return;
-        }
-
-        if (!selected.Plan.CanInstall)
-        {
-            status.Text = selected.Plan.Message;
-            return;
-        }
-
-        var confirmation = System.Windows.MessageBox.Show(
-            $"Install {selected.Entry.Name} {selected.Entry.Version}?\n\nExternal plugins run inside Weed and have the same local permissions as the app. Only install plugins you trust.",
-            "Install Weed Plugin",
-            MessageBoxButton.OKCancel,
-            MessageBoxImage.Warning);
-        if (confirmation != MessageBoxResult.OK)
-        {
-            return;
-        }
-
-        try
-        {
-            installButton.IsEnabled = false;
-            repositoryButton.IsEnabled = false;
-            status.Text = $"Downloading {selected.Entry.Name}...";
-            var registryLocation = registryBox.Text.Trim();
-            _settings.SetAppSettings(_settings.AppSettings with { ExternalPluginRegistryUrl = registryLocation });
-            var result = await new ExternalPluginRegistryService().DownloadAndImportAsync(
-                selected.Entry,
-                registryLocation,
-                _settings.Paths.Plugins,
-                Path.Combine(_settings.Paths.Cache, "plugin-downloads"),
-                CancellationToken.None);
-            status.Text = result.TargetDirectory is null
-                ? result.Message
-                : $"{result.Message}{Environment.NewLine}{result.TargetDirectory}";
-            System.Windows.MessageBox.Show(
-                result.Message,
-                "Weed Plugin Install",
-                MessageBoxButton.OK,
-                result.Succeeded ? MessageBoxImage.Information : MessageBoxImage.Warning);
-
-            await RefreshExternalPluginRegistryAsync(
-                registryBox,
-                registryList,
-                installButton,
-                repositoryButton,
-                status);
-        }
-        catch (Exception ex)
-        {
-            _logger.Error("External plugin registry install failed.", ex);
-            status.Text = $"Plugin install failed: {ex.Message}";
-        }
-        finally
-        {
-            UpdateExternalPluginRegistryButtons(registryList, installButton, repositoryButton);
-        }
+        var relative = Path.GetRelativePath(pluginsRoot, manifestPath);
+        var parts = relative.Split(
+            [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
+            StringSplitOptions.RemoveEmptyEntries);
+        return parts.Any(part => part.StartsWith(".", StringComparison.Ordinal));
     }
 
-    private static void UpdateExternalPluginRegistryButtons(
-        System.Windows.Controls.ListBox registryList,
-        System.Windows.Controls.Button installButton,
-        System.Windows.Controls.Button repositoryButton)
-    {
-        var selected = registryList.SelectedItem as ExternalPluginRegistryViewItem;
-        installButton.IsEnabled = selected?.Plan.CanInstall == true;
-        installButton.Content = selected?.Plan.State == ExternalPluginInstallState.UpdateAvailable ? "Update" : "Install";
-        repositoryButton.IsEnabled = !string.IsNullOrWhiteSpace(selected?.Entry.RepositoryUrl);
-    }
-
-    private static string FormatExternalPluginRegistryItem(ExternalPluginInstallPlan plan)
+    private static string FormatExternalPluginInstallItem(ExternalPluginInstallViewItem item)
     {
         var lines = new List<string>
         {
-            plan.Message
+            item.IsLoaded ? "Loaded in this session." : "Installed on disk. Restart Weed to load changes.",
+            $"Id: {item.Manifest.Id}",
+            $"Directory: {item.Directory}"
         };
 
-        if (!string.IsNullOrWhiteSpace(plan.Entry.Description))
+        if (!string.IsNullOrWhiteSpace(item.Manifest.Assembly))
         {
-            lines.Add(plan.Entry.Description);
+            lines.Add($"Assembly: {item.Manifest.Assembly}");
         }
 
-        if (!string.IsNullOrWhiteSpace(plan.Entry.RepositoryUrl))
+        if (!string.IsNullOrWhiteSpace(item.Manifest.EntryType))
         {
-            lines.Add($"Repository: {plan.Entry.RepositoryUrl}");
+            lines.Add($"Entry: {item.Manifest.EntryType}");
         }
 
-        lines.Add($"Package: {plan.Entry.PackageUrl}");
-        lines.Add($"SHA256: {plan.Entry.Sha256}");
         return string.Join(Environment.NewLine, lines);
     }
-
 
     private async Task ImportExternalPluginAsync(string sourcePath, bool replaceExisting, TextBlock status)
     {
@@ -2364,7 +2417,13 @@ public sealed class SettingsWindow : Window
             Foreground = (System.Windows.Media.Brush)System.Windows.Application.Current.Resources["TextSecondaryBrush"],
             Margin = new Thickness(0, 0, 0, 6)
         });
-        panel.Children.Add(new System.Windows.Controls.TextBox
+        panel.Children.Add(DiagnosticTextBox(text, 150));
+        return panel;
+    }
+
+    private static System.Windows.Controls.TextBox DiagnosticTextBox(string text, double height)
+    {
+        return new System.Windows.Controls.TextBox
         {
             Text = text,
             IsReadOnly = true,
@@ -2373,13 +2432,12 @@ public sealed class SettingsWindow : Window
             TextWrapping = TextWrapping.NoWrap,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
-            Height = 150,
+            Height = height,
             Padding = new Thickness(8),
             Background = Brush("#20242E"),
             BorderBrush = Brush("#343B49"),
             BorderThickness = new Thickness(1)
-        });
-        return panel;
+        };
     }
 
     private UIElement DiagnosticExpander(string title, string text)
@@ -2452,9 +2510,9 @@ public sealed class SettingsWindow : Window
     private static string ActivationText(PluginActivationManifest activation) =>
         $"{activation.Type}: {activation.Keyword ?? activation.Provider ?? activation.Command ?? activation.DefaultKeys ?? ""}";
 
-    private static UIElement PluginIconElement(WeedPluginManifest manifest, double size = 24)
+    private static UIElement PluginIconElement(LoadedPlugin plugin, double size = 24)
     {
-        var path = ResolveIconPath(manifest.Icon);
+        var path = ResolveIconPath(plugin.Manifest.Icon, plugin.PluginDirectory);
         var image = LoadImage(path);
         if (image is not null)
         {
@@ -2470,7 +2528,7 @@ public sealed class SettingsWindow : Window
 
         return new TextBlock
         {
-            Text = manifest.Name.Length == 0 ? "*" : manifest.Name[0].ToString().ToUpperInvariant(),
+            Text = plugin.Manifest.Name.Length == 0 ? "*" : plugin.Manifest.Name[0].ToString().ToUpperInvariant(),
             Foreground = (System.Windows.Media.Brush)System.Windows.Application.Current.Resources["AccentBrush"],
             FontWeight = FontWeights.SemiBold,
             HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
@@ -2485,14 +2543,20 @@ public sealed class SettingsWindow : Window
         return brush;
     }
 
-    private static string? ResolveIconPath(string? icon)
+    private static string? ResolveIconPath(string? icon, string? pluginDirectory)
     {
         if (string.IsNullOrWhiteSpace(icon))
         {
             return null;
         }
 
-        return Path.IsPathRooted(icon) ? icon : Path.Combine(AppContext.BaseDirectory, icon);
+        if (Path.IsPathRooted(icon))
+        {
+            return icon;
+        }
+
+        var root = string.IsNullOrWhiteSpace(pluginDirectory) ? AppContext.BaseDirectory : pluginDirectory;
+        return Path.Combine(root, icon);
     }
 
     private static ImageSource? LoadImage(string? path)

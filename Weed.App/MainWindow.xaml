@@ -157,17 +157,24 @@
                                         </Image.Style>
                                     </Image>
                                     <TextBlock Text="{Binding IconGlyph}"
-                                               Foreground="{StaticResource AccentBrush}"
-                                               FontSize="12"
-                                               FontWeight="SemiBold"
                                                HorizontalAlignment="Center"
                                                VerticalAlignment="Center">
                                         <TextBlock.Style>
                                             <Style TargetType="TextBlock">
                                                 <Setter Property="Visibility" Value="Collapsed" />
+                                                <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
+                                                <Setter Property="FontSize" Value="12" />
+                                                <Setter Property="FontWeight" Value="SemiBold" />
+                                                <Setter Property="FontFamily" Value="Segoe UI" />
                                                 <Style.Triggers>
                                                     <DataTrigger Binding="{Binding IconSource}" Value="{x:Null}">
                                                         <Setter Property="Visibility" Value="Visible" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding Result.Result.PluginId}" Value="weed.emoji">
+                                                        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+                                                        <Setter Property="FontFamily" Value="Segoe UI Emoji" />
+                                                        <Setter Property="FontSize" Value="21" />
+                                                        <Setter Property="FontWeight" Value="Normal" />
                                                     </DataTrigger>
                                                 </Style.Triggers>
                                             </Style>

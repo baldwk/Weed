@@ -17,8 +17,7 @@ public sealed record WeedAppSettings
 
     public string UpdateManifestUrl { get; init; } = string.Empty;
 
-    public string ExternalPluginRegistryUrl { get; init; } =
-        "https://raw.githubusercontent.com/wky/Weed/master/plugins.registry.json";
+    public string ExternalPluginRegistryUrl { get; init; } = string.Empty;
 
     public string MainHotkey { get; init; } = "Alt+Space";
 

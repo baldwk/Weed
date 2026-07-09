@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Text;
 using Weed.Abstractions;
 using IQueryProvider = Weed.Abstractions.IQueryProvider;
 
@@ -6,7 +8,9 @@ namespace Weed.Plugins.Emoji;
 public sealed class EmojiPlugin : IWeedPlugin, IQueryProvider, ICommandHandler, IPluginSettingsProvider
 {
     public const string PluginId = "weed.emoji";
-    private static readonly EmojiEntry[] Entries =
+    private const string EmojiResourceName = "Weed.Plugins.Emoji.emoji-test.txt";
+    private static readonly Lazy<IReadOnlyList<EmojiEntry>> Entries = new(LoadEntries);
+    private static readonly EmojiEntry[] FallbackEntries =
     [
         new("grinning", "😀", "Smileys", ["grin", "smile", "happy", "face"]),
         new("smile", "😄", "Smileys", ["happy", "joy", "laugh"]),
@@ -91,6 +95,72 @@ public sealed class EmojiPlugin : IWeedPlugin, IQueryProvider, ICommandHandler, 
         new("globe", "🌍", "Travel", ["world", "earth"])
     ];
 
+    private static readonly (string Name, string[] Aliases)[] AliasRules =
+    [
+        ("grinning face", ["grin", "smile", "happy", "face"]),
+        ("beaming face", ["laughing", "satisfied", "happy"]),
+        ("face with tears of joy", ["joy", "tears", "laugh", "funny"]),
+        ("rolling on the floor laughing", ["rofl", "rolling", "laugh"]),
+        ("winking face", ["wink", "flirt"]),
+        ("smiling face with smiling eyes", ["blush", "smile", "shy"]),
+        ("smiling face with heart-eyes", ["heart eyes", "love", "crush"]),
+        ("star-struck", ["stars", "excited"]),
+        ("thinking face", ["thinking", "hmm", "question"]),
+        ("thumbs up", ["like", "approve", "+1"]),
+        ("thumbs down", ["dislike", "-1"]),
+        ("clapping hands", ["clap", "applause", "bravo"]),
+        ("folded hands", ["pray", "please", "thanks", "hope"]),
+        ("flexed biceps", ["muscle", "strong", "flex"]),
+        ("waving hand", ["wave", "hello", "bye"]),
+        ("ok hand", ["ok", "perfect"]),
+        ("backhand index pointing right", ["point right", "right", "finger"]),
+        ("red heart", ["heart", "love"]),
+        ("sparkles", ["stars", "shine"]),
+        ("fire", ["hot", "lit"]),
+        ("check mark", ["done", "yes", "success"]),
+        ("cross mark", ["no", "fail", "x"]),
+        ("warning", ["alert", "caution"]),
+        ("question mark", ["question", "help"]),
+        ("exclamation mark", ["exclamation", "bang", "important"]),
+        ("rocket", ["launch", "ship", "deploy"]),
+        ("hourglass", ["time", "wait"]),
+        ("alarm clock", ["time", "reminder"]),
+        ("light bulb", ["idea", "hint"]),
+        ("gear", ["settings", "cog"]),
+        ("wrench", ["tool", "fix"]),
+        ("hammer", ["build", "tool"]),
+        ("package", ["box", "ship"]),
+        ("memo", ["note", "write"]),
+        ("clipboard", ["copy", "paste"]),
+        ("calendar", ["date", "schedule"]),
+        ("paperclip", ["attach"]),
+        ("link", ["url", "chain"]),
+        ("locked", ["lock", "secure", "private"]),
+        ("key", ["password", "secret"]),
+        ("magnifying glass", ["search", "find"]),
+        ("file folder", ["folder", "directory"]),
+        ("page facing up", ["page", "file", "document"]),
+        ("laptop", ["computer", "code"]),
+        ("mobile phone", ["phone", "mobile"]),
+        ("camera", ["photo", "image"]),
+        ("lady beetle", ["bug", "issue", "debug"]),
+        ("hot beverage", ["coffee", "drink", "cafe"]),
+        ("pizza", ["food"]),
+        ("birthday cake", ["cake", "birthday"]),
+        ("beer mug", ["beer", "drink"]),
+        ("soccer ball", ["soccer", "football", "sports"]),
+        ("trophy", ["award", "win"]),
+        ("sports medal", ["medal", "award"]),
+        ("party popper", ["celebrate", "congrats"]),
+        ("wrapped gift", ["gift", "present"]),
+        ("musical note", ["music", "song"]),
+        ("automobile", ["car", "auto"]),
+        ("airplane", ["flight", "plane"]),
+        ("locomotive", ["train", "rail"]),
+        ("house", ["home"]),
+        ("globe", ["world", "earth"])
+    ];
+
     private IWeedHost? _host;
 
     public string ProviderId => "emoji";
@@ -156,7 +226,7 @@ public sealed class EmojiPlugin : IWeedPlugin, IQueryProvider, ICommandHandler, 
         var maxResults = Math.Clamp(_host?.Settings.GetPluginSetting(PluginId, "maxResults", 30) ?? 30, 5, 100);
         var defaultCopyFormat = _host?.Settings.GetPluginSetting(PluginId, "copyFormat", "emoji") ?? "emoji";
 
-        var matches = Entries
+        var matches = Entries.Value
             .Select((entry, index) => (Entry: entry, Score: Score(entry, query), Index: index))
             .Where(item => query.Length == 0 || item.Score > 0)
             .OrderByDescending(item => query.Length == 0 ? 1 : item.Score)
@@ -203,9 +273,9 @@ public sealed class EmojiPlugin : IWeedPlugin, IQueryProvider, ICommandHandler, 
 
         return new WeedResult
         {
-            Id = $"emoji-{entry.Shortcode}",
+            Id = $"emoji-{entry.CodepointSlug}",
             PluginId = PluginId,
-            Title = $"{entry.Value}  {entry.Name}",
+            Title = entry.Name,
             Subtitle = $"{entry.Category} - :{entry.Shortcode}:",
             Icon = WeedIcon.FromGlyph(entry.Value),
             MatchScore = Math.Clamp(score, 1, 30),
@@ -221,9 +291,125 @@ public sealed class EmojiPlugin : IWeedPlugin, IQueryProvider, ICommandHandler, 
                 ["emoji"] = entry.Value,
                 ["shortcode"] = $":{entry.Shortcode}:",
                 ["name"] = entry.Name,
-                ["category"] = entry.Category
+                ["category"] = entry.Category,
+                ["subcategory"] = entry.Subcategory
             }
         };
+    }
+
+    private static EmojiEntry[] LoadEntries()
+    {
+        using var stream = typeof(EmojiPlugin).Assembly.GetManifestResourceStream(EmojiResourceName);
+        if (stream is null)
+        {
+            return FallbackEntries;
+        }
+
+        using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+        var entries = new List<EmojiEntry>();
+        var category = "Emoji";
+        var subcategory = string.Empty;
+
+        while (reader.ReadLine() is { } line)
+        {
+            if (line.StartsWith("# group: ", StringComparison.Ordinal))
+            {
+                category = line["# group: ".Length..].Trim();
+                subcategory = string.Empty;
+                continue;
+            }
+
+            if (line.StartsWith("# subgroup: ", StringComparison.Ordinal))
+            {
+                subcategory = line["# subgroup: ".Length..].Trim();
+                continue;
+            }
+
+            var entry = ParseEmojiLine(line, category, subcategory);
+            if (entry is not null)
+            {
+                entries.Add(entry);
+            }
+        }
+
+        return entries.Count == 0 ? FallbackEntries : entries.ToArray();
+    }
+
+    private static EmojiEntry? ParseEmojiLine(string line, string category, string subcategory)
+    {
+        var semicolon = line.IndexOf(';');
+        var hash = line.IndexOf('#');
+        if (semicolon <= 0 || hash <= semicolon)
+        {
+            return null;
+        }
+
+        var status = line[(semicolon + 1)..hash].Trim();
+        if (!status.Equals("fully-qualified", StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        var payload = line[(hash + 1)..].Trim();
+        var emojiEnd = payload.IndexOf(' ');
+        if (emojiEnd <= 0)
+        {
+            return null;
+        }
+
+        var emoji = payload[..emojiEnd];
+        var nameStart = payload.IndexOf(' ', emojiEnd + 1);
+        if (nameStart <= emojiEnd)
+        {
+            return null;
+        }
+
+        var name = payload[(nameStart + 1)..].Trim();
+        if (name.Length == 0)
+        {
+            return null;
+        }
+
+        var codepoints = line[..semicolon].Trim();
+        return new EmojiEntry(
+            name,
+            emoji,
+            category,
+            BuildAliases(name, category, subcategory),
+            subcategory,
+            ToCodepointSlug(codepoints));
+    }
+
+    private static IReadOnlyList<string> BuildAliases(string name, string category, string subcategory)
+    {
+        var normalizedName = Normalize(name);
+        var aliases = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ToShortcode(name),
+            category,
+            subcategory
+        };
+
+        foreach (var (ruleName, ruleAliases) in AliasRules)
+        {
+            var normalizedRule = Normalize(ruleName);
+            if (normalizedName.Equals(normalizedRule, StringComparison.Ordinal) ||
+                normalizedName.Contains(normalizedRule, StringComparison.Ordinal))
+            {
+                foreach (var alias in ruleAliases)
+                {
+                    aliases.Add(alias);
+                }
+            }
+        }
+
+        if (normalizedName.Contains("heart", StringComparison.Ordinal))
+        {
+            aliases.Add("love");
+        }
+
+        aliases.Remove(string.Empty);
+        return aliases.ToArray();
     }
 
     private static double Score(EmojiEntry entry, string query)
@@ -233,51 +419,165 @@ public sealed class EmojiPlugin : IWeedPlugin, IQueryProvider, ICommandHandler, 
             return 18;
         }
 
-        var name = Normalize(entry.Name);
-        var shortcode = Normalize(entry.Shortcode);
-        var category = Normalize(entry.Category);
-
-        if (shortcode.Equals(query, StringComparison.OrdinalIgnoreCase) ||
-            name.Equals(query, StringComparison.OrdinalIgnoreCase))
+        if (entry.SearchShortcode.Equals(query, StringComparison.Ordinal) ||
+            entry.SearchName.Equals(query, StringComparison.Ordinal))
         {
             return 30;
         }
 
-        if (entry.Aliases.Any(alias => Normalize(alias).Equals(query, StringComparison.OrdinalIgnoreCase)))
+        if (entry.SearchAliases.Contains(query, StringComparer.Ordinal))
         {
             return 28;
         }
 
-        if (shortcode.StartsWith(query, StringComparison.OrdinalIgnoreCase) ||
-            name.StartsWith(query, StringComparison.OrdinalIgnoreCase))
+        if (entry.SearchShortcode.StartsWith(query, StringComparison.Ordinal) ||
+            entry.SearchName.StartsWith(query, StringComparison.Ordinal))
         {
             return 24;
         }
 
-        if (entry.Aliases.Any(alias => Normalize(alias).StartsWith(query, StringComparison.OrdinalIgnoreCase)))
+        if (entry.SearchAliases.Any(alias => alias.StartsWith(query, StringComparison.Ordinal)))
         {
             return 22;
         }
 
-        if (shortcode.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-            name.Contains(query, StringComparison.OrdinalIgnoreCase))
+        if (entry.SearchShortcode.Contains(query, StringComparison.Ordinal) ||
+            entry.SearchName.Contains(query, StringComparison.Ordinal))
         {
             return 16;
         }
 
-        if (entry.Aliases.Any(alias => Normalize(alias).Contains(query, StringComparison.OrdinalIgnoreCase)))
+        if (entry.SearchAliases.Any(alias => alias.Contains(query, StringComparison.Ordinal)))
         {
             return 14;
         }
 
-        return category.Contains(query, StringComparison.OrdinalIgnoreCase) ? 8 : 0;
+        return entry.SearchCategory.Contains(query, StringComparison.Ordinal) ||
+               entry.SearchSubcategory.Contains(query, StringComparison.Ordinal)
+            ? 8
+            : 0;
     }
 
-    private static string Normalize(string value) =>
-        value.Trim().Trim(':').Replace('_', ' ').Replace('-', ' ').ToLowerInvariant();
-
-    private sealed record EmojiEntry(string Name, string Value, string Category, IReadOnlyList<string> Aliases)
+    private static string Normalize(string value)
     {
-        public string Shortcode => Name.Replace(' ', '_').ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var source = value.Trim().Trim(':').Replace('_', ' ').Normalize(NormalizationForm.FormD);
+        var builder = new StringBuilder(source.Length);
+        var previousWasSpace = true;
+
+        for (var i = 0; i < source.Length; i++)
+        {
+            var ch = source[i];
+            if (CharUnicodeInfo.GetUnicodeCategory(ch) == UnicodeCategory.NonSpacingMark)
+            {
+                continue;
+            }
+
+            if (char.IsLetterOrDigit(ch))
+            {
+                builder.Append(char.ToLowerInvariant(ch));
+                previousWasSpace = false;
+                continue;
+            }
+
+            if ((ch == '+' || ch == '-') && IsSignPart(source, i))
+            {
+                builder.Append(ch);
+                previousWasSpace = false;
+                continue;
+            }
+
+            if (!previousWasSpace)
+            {
+                builder.Append(' ');
+                previousWasSpace = true;
+            }
+        }
+
+        return builder.ToString().Trim();
+    }
+
+    private static bool IsSignPart(string value, int index) =>
+        (index > 0 && char.IsDigit(value[index - 1])) ||
+        (index + 1 < value.Length && char.IsDigit(value[index + 1]));
+
+    private static string ToShortcode(string name)
+    {
+        var shortcode = Normalize(name)
+            .Replace("+", "plus", StringComparison.Ordinal)
+            .Replace("-", "minus", StringComparison.Ordinal)
+            .Replace(' ', '_')
+            .Trim('_');
+
+        return shortcode.Length == 0 ? "emoji" : shortcode;
+    }
+
+    private static string ToCodepointSlug(string codepoints) =>
+        string.Join('-', codepoints
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(part => part.ToLowerInvariant()));
+
+    private static string ToCodepointSlugFromEmoji(string value) =>
+        string.Join('-', value
+            .EnumerateRunes()
+            .Select(rune => rune.Value.ToString("x", CultureInfo.InvariantCulture)));
+
+    private sealed record EmojiEntry
+    {
+        public EmojiEntry(
+            string name,
+            string value,
+            string category,
+            IReadOnlyList<string> aliases,
+            string subcategory = "",
+            string codepointSlug = "")
+        {
+            Name = name;
+            Value = value;
+            Category = category;
+            Subcategory = subcategory;
+            Aliases = aliases;
+            Shortcode = ToShortcode(name);
+            CodepointSlug = string.IsNullOrWhiteSpace(codepointSlug)
+                ? ToCodepointSlugFromEmoji(value)
+                : codepointSlug;
+            SearchName = Normalize(name);
+            SearchShortcode = Normalize(Shortcode);
+            SearchCategory = Normalize(category);
+            SearchSubcategory = Normalize(subcategory);
+            SearchAliases = aliases
+                .Select(Normalize)
+                .Where(alias => alias.Length > 0)
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+        }
+
+        public string Name { get; }
+
+        public string Value { get; }
+
+        public string Category { get; }
+
+        public string Subcategory { get; }
+
+        public IReadOnlyList<string> Aliases { get; }
+
+        public string Shortcode { get; }
+
+        public string CodepointSlug { get; }
+
+        public string SearchName { get; }
+
+        public string SearchShortcode { get; }
+
+        public string SearchCategory { get; }
+
+        public string SearchSubcategory { get; }
+
+        public IReadOnlyList<string> SearchAliases { get; }
     }
 }
