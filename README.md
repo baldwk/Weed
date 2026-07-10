@@ -16,6 +16,20 @@ The app opens the launcher window on startup and also creates a tray icon. Searc
 - `clip keyword` searches captured clipboard text.
 - `shot` opens screenshot actions.
 
+## Screenshots
+
+| App Launcher | Calculator |
+| --- | --- |
+| <img src="screenshots/01-app-launcher.png" alt="App Launcher query result" width="420"> | <img src="screenshots/02-calculator.png" alt="Calculator query result" width="420"> |
+| Clipboard History | Translator |
+| <img src="screenshots/03-clipboard-history.png" alt="Clipboard history with image preview" width="420"> | <img src="screenshots/04-translator.png" alt="Translator query result" width="420"> |
+| Run Command | Emoji Search |
+| <img src="screenshots/05-run-command.png" alt="Run Command query result" width="420"> | <img src="screenshots/06-emoji-search.png" alt="Emoji Search query result" width="420"> |
+| OCR Result | Screenshot Actions |
+| <img src="screenshots/07-ocr-result.png" alt="OCR result preview" width="420"> | <img src="screenshots/08-screenshot-actions.png" alt="Screenshot action list" width="420"> |
+| Hotkeys Preferences | Plugin Settings |
+| <img src="screenshots/09-preferences-hotkeys.png" alt="Hotkeys preferences" width="420"> | <img src="screenshots/10-plugin-settings.png" alt="Screenshot plugin settings" width="420"> |
+
 ## Current Scope
 
 - WPF host application with Alfred-style centered search window.
