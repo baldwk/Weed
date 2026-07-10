@@ -24,7 +24,8 @@ public partial class MainWindow : Window
     private const double PreviewResultsColumnWidth = 330;
     private const double EmptyLauncherHeight = 150;
     private const double BaseLauncherHeight = 156;
-    private const double ResultRowHeight = 72;
+    private const double ResultRowChromeHeight = 18;
+    private const double ResultRowHeight = 66 + ResultRowChromeHeight;
     private const int VisibleResultRows = 6;
     private const double MaxResultsPanelHeight = VisibleResultRows * ResultRowHeight;
     private const double MinPreviewPanelHeight = 260;
@@ -479,8 +480,11 @@ public partial class MainWindow : Window
     private void ApplyResultLayout(int resultCount)
     {
         ResultsList.Visibility = resultCount > 0 ? Visibility.Visible : Visibility.Collapsed;
+        ScrollViewer.SetVerticalScrollBarVisibility(
+            ResultsList,
+            resultCount > VisibleResultRows ? ScrollBarVisibility.Auto : ScrollBarVisibility.Disabled);
         var resultHeight = Math.Min(
-            _state.Results.Take(VisibleResultRows).Sum(item => item.RowHeight + 6),
+            _state.Results.Take(VisibleResultRows).Sum(item => item.RowHeight + ResultRowChromeHeight),
             MaxResultsPanelHeight);
         if (_state.HasSelectedPreview)
         {

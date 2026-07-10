@@ -30,6 +30,7 @@ public sealed record RankedResult(
 
 public sealed class QueryRouter
 {
+    private const double UsageScoreWeight = 0.08;
     private readonly SettingsRepository _settings;
     private readonly UsageHistoryStore _usage;
     private readonly IWeedLogger? _logger;
@@ -225,10 +226,11 @@ public sealed class QueryRouter
                 {
                     var usage = _usage.GetScore(result.PluginId, result.Id, result.DefaultCommand);
                     var priority = includePriority ? _settings.GetPluginPriority(result.PluginId) : 0;
+                    // Usage should break close ties, not let a frequent loose match outrank a direct match.
                     return new RankedResult(
                         result,
                         plugin.Manifest.Name,
-                        Math.Clamp(result.MatchScore, 0, 30) + usage + priority,
+                        Math.Clamp(result.MatchScore, 0, 30) + usage * UsageScoreWeight + priority,
                         usage,
                         priority,
                         pluginOrder,

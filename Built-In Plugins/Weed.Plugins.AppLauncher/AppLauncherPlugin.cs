@@ -243,7 +243,13 @@ public sealed class AppLauncherPlugin : IWeedPlugin, IQueryProvider, ICommandHan
     {
         foreach (var shellApp in EnumerateShellAppsFolderApps())
         {
-            var entry = CreatePackagedAppEntry(shellApp.DisplayName, shellApp.AppUserModelId);
+            var iconPath = shellApp.IconPath ??
+                           TryExtractIcon(ToShellAppsFolderPath(shellApp.AppUserModelId), shellApp.TargetPath);
+            var entry = CreatePackagedAppEntry(
+                shellApp.DisplayName,
+                shellApp.AppUserModelId,
+                iconPath,
+                shellApp.TargetPath);
             if (seenLaunchTargets.Add(CreateLaunchIdentity(entry.ShortcutPath, null)))
             {
                 _entries.Add(entry);
@@ -443,7 +449,11 @@ public sealed class AppLauncherPlugin : IWeedPlugin, IQueryProvider, ICommandHan
         };
     }
 
-    public static AppEntry CreatePackagedAppEntry(string displayName, string appUserModelId)
+    public static AppEntry CreatePackagedAppEntry(
+        string displayName,
+        string appUserModelId,
+        string? iconPath = null,
+        string? targetPath = null)
     {
         var normalizedAppId = NormalizeShellAppsFolderId(appUserModelId);
         var normalized = Normalize(displayName);
@@ -456,6 +466,8 @@ public sealed class AppLauncherPlugin : IWeedPlugin, IQueryProvider, ICommandHan
             Pinyin = pinyin,
             PinyinInitials = ToPinyinInitials(displayName),
             Acronym = Acronym(displayName),
+            TargetPath = targetPath,
+            IconPath = iconPath,
             ShortcutPath = ToShellAppsFolderPath(normalizedAppId),
             IndexedAt = DateTimeOffset.Now
         };
@@ -569,6 +581,14 @@ public sealed class AppLauncherPlugin : IWeedPlugin, IQueryProvider, ICommandHan
         if (containsScore > 0)
         {
             return containsScore;
+        }
+
+        var identityScore = query.Length >= 4
+            ? ContainsScore(SearchableShellIdentity(entry.ShortcutPath), query)
+            : 0;
+        if (identityScore > 0)
+        {
+            return Math.Min(identityScore, 20);
         }
 
         if (IsSubsequence(query, entry.NormalizedName) ||
@@ -718,12 +738,16 @@ public sealed class AppLauncherPlugin : IWeedPlugin, IQueryProvider, ICommandHan
                     var appUserModelId = NormalizeShellAppsFolderId(Convert.ToString(item.Path) ?? string.Empty);
                     if (string.IsNullOrWhiteSpace(displayName) ||
                         string.IsNullOrWhiteSpace(appUserModelId) ||
-                        !appUserModelId.Contains('!', StringComparison.Ordinal))
+                        !ShouldIndexShellAppsFolderApp(appUserModelId))
                     {
                         continue;
                     }
 
-                    apps.Add(new ShellAppInfo(displayName, appUserModelId));
+                    apps.Add(new ShellAppInfo(
+                        displayName,
+                        appUserModelId,
+                        TryGetShellItemProperty(itemObject, "System.Link.TargetParsingPath"),
+                        TryResolveShellAppIconPath(itemObject)));
                 }
                 catch
                 {
@@ -747,6 +771,124 @@ public sealed class AppLauncherPlugin : IWeedPlugin, IQueryProvider, ICommandHan
         }
 
         return apps;
+    }
+
+    private static bool ShouldIndexShellAppsFolderApp(string appUserModelId) =>
+        appUserModelId.Contains("!", StringComparison.Ordinal) ||
+        appUserModelId.StartsWith("{", StringComparison.Ordinal);
+
+    private static string? TryResolveShellAppIconPath(object shellItem)
+    {
+        var installPath = TryGetShellItemProperty(shellItem, "System.AppUserModel.PackageInstallPath");
+        if (string.IsNullOrWhiteSpace(installPath))
+        {
+            return null;
+        }
+
+        var logoPaths = new[]
+        {
+            TryGetShellItemProperty(shellItem, "System.Tile.Square150x150LogoPath"),
+            TryGetShellItemProperty(shellItem, "System.Tile.SmallLogoPath")
+        };
+
+        foreach (var logoPath in logoPaths)
+        {
+            var resolved = ResolvePackageLogoPath(installPath, logoPath);
+            if (!string.IsNullOrWhiteSpace(resolved))
+            {
+                return resolved;
+            }
+        }
+
+        return null;
+    }
+
+    private static string? ResolvePackageLogoPath(string installPath, string? logoPath)
+    {
+        if (string.IsNullOrWhiteSpace(logoPath))
+        {
+            return null;
+        }
+
+        try
+        {
+            var candidate = Path.IsPathRooted(logoPath)
+                ? logoPath
+                : Path.Combine(installPath, logoPath);
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+
+            var directory = Path.GetDirectoryName(candidate);
+            if (string.IsNullOrWhiteSpace(directory) || !Directory.Exists(directory))
+            {
+                return null;
+            }
+
+            var name = Path.GetFileNameWithoutExtension(candidate);
+            var extension = Path.GetExtension(candidate);
+            if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(extension))
+            {
+                return null;
+            }
+
+            return Directory
+                .EnumerateFiles(directory, $"{name}*{extension}", SearchOption.TopDirectoryOnly)
+                .OrderByDescending(ShellLogoScore)
+                .ThenBy(path => path, StringComparer.OrdinalIgnoreCase)
+                .FirstOrDefault();
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static int ShellLogoScore(string path)
+    {
+        var fileName = Path.GetFileName(path).ToLowerInvariant();
+        var score = 0;
+        if (fileName.Contains("unplated", StringComparison.Ordinal))
+        {
+            score += 100;
+        }
+
+        foreach (var (token, value) in new[]
+                 {
+                     ("targetsize-48", 90),
+                     ("targetsize-44", 88),
+                     ("targetsize-64", 86),
+                     ("targetsize-32", 84),
+                     ("targetsize-256", 80),
+                     ("scale-200", 70)
+                 })
+        {
+            if (fileName.Contains(token, StringComparison.Ordinal))
+            {
+                return score + value;
+            }
+        }
+
+        return score + 60;
+    }
+
+    private static string? TryGetShellItemProperty(object shellItem, string propertyName)
+    {
+        try
+        {
+            var value = shellItem.GetType().InvokeMember(
+                "ExtendedProperty",
+                System.Reflection.BindingFlags.InvokeMethod,
+                null,
+                shellItem,
+                [propertyName]);
+            return Convert.ToString(value)?.Trim();
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private static string ToShellAppsFolderPath(string appUserModelId) =>
@@ -896,6 +1038,19 @@ public sealed class AppLauncherPlugin : IWeedPlugin, IQueryProvider, ICommandHan
             .ToUpperInvariant();
     }
 
+    private static string SearchableShellIdentity(string shortcutPath)
+    {
+        var appUserModelId = TryExtractShellAppsFolderId(shortcutPath);
+        if (string.IsNullOrWhiteSpace(appUserModelId))
+        {
+            return string.Empty;
+        }
+
+        return Normalize(new string(appUserModelId
+            .Select(ch => char.IsLetterOrDigit(ch) ? char.ToLowerInvariant(ch) : ' ')
+            .ToArray()));
+    }
+
     private static bool IsUnderDirectory(string path, string directory)
     {
         try
@@ -971,7 +1126,11 @@ public sealed class AppLauncherPlugin : IWeedPlugin, IQueryProvider, ICommandHan
         }
     }
 
-    private sealed record ShellAppInfo(string DisplayName, string AppUserModelId);
+    private sealed record ShellAppInfo(
+        string DisplayName,
+        string AppUserModelId,
+        string? TargetPath,
+        string? IconPath);
 }
 
 public sealed record AppEntry

@@ -200,6 +200,7 @@ file path:projects weed
 
 - 直接把查询传给 Everything，支持 Everything 查询语法。
 - 可选择是否包含文件夹；关闭后会在查询前追加 `file:`。
+- 可选择 Everything SDK 排序方式，默认按名称升序。
 - 结果包含完整路径，并按 Everything 返回顺序映射为 Weed 结果分数。
 - 仓库随插件携带 `Everything64.dll` 和 `Everything32.dll`，运行时按进程位数选择。
 - Everything 未安装、IPC 不可用、查询非法或 SDK 调用失败时返回诊断结果。
@@ -214,6 +215,7 @@ file path:projects weed
 
 - `includeFolders`: 是否包含文件夹结果，默认 `true`。
 - `maxResults`: 最大结果数，默认 `50`，范围 `5` 到 `200`。
+- `sort`: Everything SDK 排序方式，默认 `Name ascending`，可选名称、路径、大小、扩展名、类型、日期、属性、运行次数等升序/降序排序。
 
 ## Run Command
 

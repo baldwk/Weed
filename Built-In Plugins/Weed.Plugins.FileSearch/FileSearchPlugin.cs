@@ -72,6 +72,17 @@ public sealed class FileSearchPlugin : IWeedPlugin, IQueryProvider, ICommandHand
             DefaultValue = "50",
             Min = 5,
             Max = 200
+        },
+        new()
+        {
+            Key = "sort",
+            Label = "Sort order",
+            Kind = PluginSettingKind.Select,
+            DefaultValue = EverythingSortOption.NameAscending.Value,
+            Description = "Uses Everything SDK sort types.",
+            Options = EverythingSortOption.All
+                .Select(option => new PluginSettingOption { Value = option.Value, Label = option.Label })
+                .ToArray()
         }
     ];
 
@@ -232,11 +243,80 @@ public enum FileSearchResultKind
 
 public sealed record FileSearchSettings(
     bool IncludeFolders,
-    int MaxResults)
+    int MaxResults,
+    EverythingSortOption Sort)
 {
     public static FileSearchSettings FromHost(IWeedSettings settings) => new(
         settings.GetPluginSetting(FileSearchPlugin.PluginId, "includeFolders", true),
-        Math.Clamp(settings.GetPluginSetting(FileSearchPlugin.PluginId, "maxResults", 50), 5, 200));
+        Math.Clamp(settings.GetPluginSetting(FileSearchPlugin.PluginId, "maxResults", 50), 5, 200),
+        EverythingSortOption.FromValue(settings.GetPluginSetting(
+            FileSearchPlugin.PluginId,
+            "sort",
+            EverythingSortOption.NameAscending.Value)));
+}
+
+public sealed record EverythingSortOption(string Value, string Label, uint SortType)
+{
+    public static readonly EverythingSortOption NameAscending = new("nameAscending", "Name asc", 1);
+    public static readonly EverythingSortOption NameDescending = new("nameDescending", "Name desc", 2);
+    public static readonly EverythingSortOption PathAscending = new("pathAscending", "Path asc", 3);
+    public static readonly EverythingSortOption PathDescending = new("pathDescending", "Path desc", 4);
+    public static readonly EverythingSortOption SizeAscending = new("sizeAscending", "Size asc", 5);
+    public static readonly EverythingSortOption SizeDescending = new("sizeDescending", "Size desc", 6);
+    public static readonly EverythingSortOption ExtensionAscending = new("extensionAscending", "Extension asc", 7);
+    public static readonly EverythingSortOption ExtensionDescending = new("extensionDescending", "Extension desc", 8);
+    public static readonly EverythingSortOption TypeNameAscending = new("typeNameAscending", "Type name asc", 9);
+    public static readonly EverythingSortOption TypeNameDescending = new("typeNameDescending", "Type name desc", 10);
+    public static readonly EverythingSortOption DateCreatedAscending = new("dateCreatedAscending", "Created asc", 11);
+    public static readonly EverythingSortOption DateCreatedDescending = new("dateCreatedDescending", "Created desc", 12);
+    public static readonly EverythingSortOption DateModifiedAscending = new("dateModifiedAscending", "Modified asc", 13);
+    public static readonly EverythingSortOption DateModifiedDescending = new("dateModifiedDescending", "Modified desc", 14);
+    public static readonly EverythingSortOption AttributesAscending = new("attributesAscending", "Attributes asc", 15);
+    public static readonly EverythingSortOption AttributesDescending = new("attributesDescending", "Attributes desc", 16);
+    public static readonly EverythingSortOption FileListFilenameAscending = new("fileListFilenameAscending", "File-list name asc", 17);
+    public static readonly EverythingSortOption FileListFilenameDescending = new("fileListFilenameDescending", "File-list name desc", 18);
+    public static readonly EverythingSortOption RunCountAscending = new("runCountAscending", "Run count asc", 19);
+    public static readonly EverythingSortOption RunCountDescending = new("runCountDescending", "Run count desc", 20);
+    public static readonly EverythingSortOption DateRecentlyChangedAscending = new("dateRecentlyChangedAscending", "Recently changed asc", 21);
+    public static readonly EverythingSortOption DateRecentlyChangedDescending = new("dateRecentlyChangedDescending", "Recently changed desc", 22);
+    public static readonly EverythingSortOption DateAccessedAscending = new("dateAccessedAscending", "Accessed asc", 23);
+    public static readonly EverythingSortOption DateAccessedDescending = new("dateAccessedDescending", "Accessed desc", 24);
+    public static readonly EverythingSortOption DateRunAscending = new("dateRunAscending", "Date run asc", 25);
+    public static readonly EverythingSortOption DateRunDescending = new("dateRunDescending", "Date run desc", 26);
+
+    public static IReadOnlyList<EverythingSortOption> All { get; } =
+    [
+        NameAscending,
+        NameDescending,
+        PathAscending,
+        PathDescending,
+        SizeAscending,
+        SizeDescending,
+        ExtensionAscending,
+        ExtensionDescending,
+        TypeNameAscending,
+        TypeNameDescending,
+        DateCreatedAscending,
+        DateCreatedDescending,
+        DateModifiedAscending,
+        DateModifiedDescending,
+        AttributesAscending,
+        AttributesDescending,
+        FileListFilenameAscending,
+        FileListFilenameDescending,
+        RunCountAscending,
+        RunCountDescending,
+        DateRecentlyChangedAscending,
+        DateRecentlyChangedDescending,
+        DateAccessedAscending,
+        DateAccessedDescending,
+        DateRunAscending,
+        DateRunDescending
+    ];
+
+    public static EverythingSortOption FromValue(string? value) =>
+        All.FirstOrDefault(option => option.Value.Equals(value, StringComparison.OrdinalIgnoreCase))
+        ?? NameAscending;
 }
 
 public sealed class EverythingUnavailableException : Exception
@@ -262,6 +342,7 @@ public sealed class EverythingSdkSearchClient : IEverythingSearchClient
             sdk.SetSearch(search);
             sdk.SetRequestFlags(EverythingSdk.RequestFileName | EverythingSdk.RequestPath);
             sdk.SetMax((uint)settings.MaxResults);
+            sdk.SetSort(settings.Sort.SortType);
             if (!sdk.Query(wait: true))
             {
                 throw new EverythingUnavailableException(EverythingErrorMessage(sdk.LastError));
@@ -313,6 +394,8 @@ internal abstract class EverythingSdk
 
     public abstract void SetMax(uint max);
 
+    public abstract void SetSort(uint sortType);
+
     public abstract bool Query(bool wait);
 
     public abstract bool IsFolderResult(uint index);
@@ -331,6 +414,8 @@ internal sealed class EverythingSdk64 : EverythingSdk
     public override void SetRequestFlags(uint flags) => Native.Everything_SetRequestFlags(flags);
 
     public override void SetMax(uint max) => Native.Everything_SetMax(max);
+
+    public override void SetSort(uint sortType) => Native.Everything_SetSort(sortType);
 
     public override bool Query(bool wait) => Native.Everything_QueryW(wait);
 
@@ -353,6 +438,9 @@ internal sealed class EverythingSdk64 : EverythingSdk
 
         [DllImport("Everything64.dll", EntryPoint = "Everything_SetMax")]
         internal static extern void Everything_SetMax(uint max);
+
+        [DllImport("Everything64.dll", EntryPoint = "Everything_SetSort")]
+        internal static extern void Everything_SetSort(uint sortType);
 
         [DllImport("Everything64.dll", EntryPoint = "Everything_QueryW")]
         [return: MarshalAs(UnmanagedType.Bool)]
@@ -385,6 +473,8 @@ internal sealed class EverythingSdk32 : EverythingSdk
 
     public override void SetMax(uint max) => Native.Everything_SetMax(max);
 
+    public override void SetSort(uint sortType) => Native.Everything_SetSort(sortType);
+
     public override bool Query(bool wait) => Native.Everything_QueryW(wait);
 
     public override bool IsFolderResult(uint index) => Native.Everything_IsFolderResult(index);
@@ -406,6 +496,9 @@ internal sealed class EverythingSdk32 : EverythingSdk
 
         [DllImport("Everything32.dll", EntryPoint = "Everything_SetMax")]
         internal static extern void Everything_SetMax(uint max);
+
+        [DllImport("Everything32.dll", EntryPoint = "Everything_SetSort")]
+        internal static extern void Everything_SetSort(uint sortType);
 
         [DllImport("Everything32.dll", EntryPoint = "Everything_QueryW")]
         [return: MarshalAs(UnmanagedType.Bool)]

@@ -1,0 +1,6 @@
+Repository instructions for agents
+
+- Every update must include a changelog entry.
+- Place the entry under the matching released version section when the version is known.
+- Place unreleased work under a Pre-release section.
+- If the repository does not yet have a changelog, create or update one before marking release work complete.

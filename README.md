@@ -48,7 +48,7 @@ The app opens the launcher window on startup and also creates a tray icon. Searc
 - Screenshot capture supports region, primary-screen, and scrolling-area capture with a stoppable progress window. Region capture stays in the screenshot overlay with a size hint and magnifier, then uses a bottom toolbar for pen, rectangle, ellipse, color, line width, undo, redo, clear, copy, and PNG/JPEG save controls.
 - Emoji Search supports the `emoji` keyword over built-in emoji names, aliases, categories, and shortcodes.
 - Translator supports `tr` and `translate` keywords, Google Translate and Baidu Translate (百度翻译), configurable default languages, query delay, and proxy modes.
-- File Search supports the `file` keyword through the Everything SDK and Everything's local index; Weed does not build its own full-disk file index.
+- File Search supports the `file` keyword through the Everything SDK and Everything's local index, including configurable SDK sort order; Weed does not build its own full-disk file index.
 - OCR is available as a packaged external plugin using RapidOCRLib and PP-OCRv5 Chinese models; it is not referenced by `Weed.App`.
 - Settings use a sidebar layout and include launch-at-startup, hotkey editing, plugin enablement, implicit-query plugin priority, plugin-owned settings, and plugin details with manifest and log diagnostics.
 - The app ships a native application icon, tray icon, and first-party plugin icons.

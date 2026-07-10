@@ -140,7 +140,25 @@ public sealed class CalculatorPlugin : IWeedPlugin, IQueryProvider, ICommandHand
                expression.StartsWith("sin(", StringComparison.OrdinalIgnoreCase) ||
                expression.StartsWith("cos(", StringComparison.OrdinalIgnoreCase) ||
                expression.StartsWith("tan(", StringComparison.OrdinalIgnoreCase) ||
+               expression.StartsWith("ln(", StringComparison.OrdinalIgnoreCase) ||
+               StartsWithLogFunctionCall(expression) ||
                expression.StartsWith("round(", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool StartsWithLogFunctionCall(string expression)
+    {
+        if (!expression.StartsWith("log", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var position = 3;
+        while (position < expression.Length && char.IsDigit(expression[position]))
+        {
+            position++;
+        }
+
+        return position < expression.Length && expression[position] == '(';
     }
 
     private static string Format(double value, int precision)
@@ -306,19 +324,28 @@ internal sealed class ExpressionParser
             Require('(');
             var argument = ParseExpression();
             Require(')');
-            return name.ToLowerInvariant() switch
-            {
-                "sqrt" => Math.Sqrt(argument),
-                "abs" => Math.Abs(argument),
-                "sin" => Math.Sin(argument),
-                "cos" => Math.Cos(argument),
-                "tan" => Math.Tan(argument),
-                "round" => Math.Round(argument),
-                _ => throw new FormatException($"Unknown function {name}.")
-            };
+            return EvaluateFunction(name, argument);
         }
 
         return ParseNumber();
+    }
+
+    private static double EvaluateFunction(string name, double argument)
+    {
+        var normalizedName = name.ToLowerInvariant();
+        return normalizedName switch
+        {
+            "sqrt" => Math.Sqrt(argument),
+            "abs" => Math.Abs(argument),
+            "sin" => Math.Sin(argument),
+            "cos" => Math.Cos(argument),
+            "tan" => Math.Tan(argument),
+            "round" => Math.Round(argument),
+            "ln" => Math.Log(argument),
+            "log" => Math.Log10(argument),
+            _ when TryGetLogBase(normalizedName, out var logBase) => Math.Log(argument, logBase),
+            _ => throw new FormatException($"Unknown function {name}.")
+        };
     }
 
     private double ParseNumber()
@@ -340,12 +367,38 @@ internal sealed class ExpressionParser
     private string ParseIdentifier()
     {
         var start = _position;
-        while (char.IsLetter(Peek()))
+        while (char.IsLetterOrDigit(Peek()))
         {
             _position++;
         }
 
         return _text[start.._position];
+    }
+
+    private static bool TryGetLogBase(string name, out double logBase)
+    {
+        logBase = 0d;
+        const string prefix = "log";
+        if (!name.StartsWith(prefix, StringComparison.Ordinal) || name.Length == prefix.Length)
+        {
+            return false;
+        }
+
+        var suffix = name[prefix.Length..];
+        if (!suffix.All(char.IsDigit))
+        {
+            return false;
+        }
+
+        if (!long.TryParse(suffix, NumberStyles.None, CultureInfo.InvariantCulture, out var parsedBase) ||
+            parsedBase <= 0 ||
+            parsedBase == 1)
+        {
+            throw new FormatException("Log base must be greater than zero and not equal to one.");
+        }
+
+        logBase = parsedBase;
+        return true;
     }
 
     private static double Factorial(double value)

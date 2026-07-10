@@ -62,6 +62,24 @@ Require(calc.Any(r => r.Result.Title.Contains("= 7", StringComparison.Ordinal)),
 var sqrt = await router.QueryAsync("sqrt(9)", CancellationToken.None);
 Require(sqrt.Any(r => r.Result.Title.Contains("= 3", StringComparison.Ordinal)), "calculator sqrt(9) should equal 3");
 
+var log = await router.QueryAsync("log(100)", CancellationToken.None);
+Require(log.Any(r => r.Result.Title.Contains("= 2", StringComparison.Ordinal)), "calculator log(100) should equal 2");
+
+var naturalLog = await router.QueryAsync("ln(e)", CancellationToken.None);
+Require(naturalLog.Any(r => r.Result.Title.Contains("= 1", StringComparison.Ordinal)), "calculator ln(e) should equal 1");
+
+var logBase2 = await router.QueryAsync("log2(8)", CancellationToken.None);
+Require(logBase2.Any(r => r.Result.Title.Contains("= 3", StringComparison.Ordinal)), "calculator log2(8) should equal 3");
+
+var logBase3 = await router.QueryAsync("log3(81)", CancellationToken.None);
+Require(logBase3.Any(r => r.Result.Title.Contains("= 4", StringComparison.Ordinal)), "calculator log3(81) should equal 4");
+
+var logBase10 = await router.QueryAsync("log10(1000)", CancellationToken.None);
+Require(logBase10.Any(r => r.Result.Title.Contains("= 3", StringComparison.Ordinal)), "calculator log10(1000) should equal 3");
+
+var invalidLogBase = await router.QueryAsync("log1(10)", CancellationToken.None);
+Require(!invalidLogBase.Any(r => r.Result.PluginId == CalculatorPlugin.PluginId), "calculator should reject log base 1");
+
 var doubleStarPower = await router.QueryAsync("2**3", CancellationToken.None);
 Require(doubleStarPower.Any(r => r.Result.Title.Contains("= 8", StringComparison.Ordinal)), "calculator 2**3 should equal 8");
 
@@ -172,6 +190,10 @@ var reportFile = fileResults.FirstOrDefault(r => r.Result.PluginId == FileSearch
 Require(reportFile is not null, "File Search should return Everything file results");
 Require(reportFile!.Result.Icon?.Path?.EndsWith(Path.Combine("assets", "plugins", "file-search.png"), StringComparison.OrdinalIgnoreCase) == true, "File Search should use the magnifying-glass icon asset");
 Require(everythingClient.LastQuery == "report", "File Search should pass the query to Everything");
+Require(everythingClient.LastSettings?.Sort.Value == EverythingSortOption.NameAscending.Value, "File Search should use Everything name ascending sort by default");
+settings.SetPluginSetting(FileSearchPlugin.PluginId, "sort", EverythingSortOption.RunCountDescending.Value);
+await router.QueryAsync("file report", CancellationToken.None);
+Require(everythingClient.LastSettings?.Sort.SortType == EverythingSortOption.RunCountDescending.SortType, "File Search should pass the selected Everything sort to the SDK client");
 var fileOpen = await router.ExecuteAsync(reportFile.Result, reportFile.Result.DefaultCommand, CancellationToken.None);
 Require(fileOpen.Succeeded && host.Shell.OpenedPath == @"C:\Reports\Quarterly Report.pdf", "File Search default action should open the selected path");
 await router.ExecuteAsync(reportFile.Result, "file.copyPath", CancellationToken.None);
@@ -347,9 +369,10 @@ Require(translateSettings.Any(s => s.Key == "provider") &&
         translateSettings.Any(s => s.Key == "baiduAppId") &&
         translateSettings.Any(s => s.Key == "baiduSecretKey"), "Translator should expose provider, language, credential, and proxy settings");
 var fileSearchSettings = ((IPluginSettingsProvider)fileSearchPlugin).GetSettings();
-Require(fileSearchSettings.Count == 2 &&
+Require(fileSearchSettings.Count == 3 &&
         fileSearchSettings.Any(s => s.Key == "includeFolders") &&
-        fileSearchSettings.Any(s => s.Key == "maxResults"), "File Search should expose Everything SDK result settings without a user-entered executable path");
+        fileSearchSettings.Any(s => s.Key == "maxResults") &&
+        fileSearchSettings.Any(s => s.Key == "sort" && s.Kind == PluginSettingKind.Select && s.Options.Any(o => o.Value == EverythingSortOption.RunCountDescending.Value)), "File Search should expose Everything SDK result and sort settings without a user-entered executable path");
 settings.SetPluginSetting(AppLauncherPlugin.PluginId, "hideMaintenanceShortcuts", false);
 Require(settings.GetPluginSetting(AppLauncherPlugin.PluginId, "hideMaintenanceShortcuts", true) == false, "plugin settings should persist typed values");
 settings.SetPluginSetting(ScreenshotPlugin.PluginId, "defaultColor", "Blue");
