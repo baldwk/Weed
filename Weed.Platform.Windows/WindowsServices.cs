@@ -1075,6 +1075,11 @@ internal sealed class RegionCaptureOverlay : Window
 
     private void OnMouseDown(object sender, MouseButtonEventArgs e)
     {
+        if (e.ChangedButton != MouseButton.Left)
+        {
+            return;
+        }
+
         _start = e.GetPosition(this);
         CaptureMouse();
     }
@@ -1092,6 +1097,11 @@ internal sealed class RegionCaptureOverlay : Window
 
     private void OnMouseUp(object sender, MouseButtonEventArgs e)
     {
+        if (e.ChangedButton != MouseButton.Left)
+        {
+            return;
+        }
+
         if (_start is null)
         {
             return;
@@ -1987,7 +1997,7 @@ internal sealed class ScreenshotSnapshotOverlay : Window
 
     private void OnSelectMouseDown(object sender, MouseButtonEventArgs e)
     {
-        if (_editing)
+        if (_editing || e.ChangedButton != MouseButton.Left)
         {
             return;
         }
@@ -2027,6 +2037,11 @@ internal sealed class ScreenshotSnapshotOverlay : Window
 
     private void OnSelectMouseUp(object sender, MouseButtonEventArgs e)
     {
+        if (e.ChangedButton != MouseButton.Left)
+        {
+            return;
+        }
+
         if (_editing || _selectStart is null || _snapshotBitmap is null)
         {
             return;
@@ -2685,7 +2700,8 @@ internal sealed class ScreenshotSnapshotOverlay : Window
 
     private void ShapeCanvas_MouseDown(object sender, MouseButtonEventArgs e)
     {
-        if (CurrentTool() is not ("Rectangle" or "Ellipse"))
+        if (e.ChangedButton != MouseButton.Left ||
+            CurrentTool() is not ("Rectangle" or "Ellipse"))
         {
             return;
         }
@@ -2729,6 +2745,11 @@ internal sealed class ScreenshotSnapshotOverlay : Window
 
     private void ShapeCanvas_MouseUp(object sender, MouseButtonEventArgs e)
     {
+        if (e.ChangedButton != MouseButton.Left)
+        {
+            return;
+        }
+
         _shapeCanvas.ReleaseMouseCapture();
         if (_activeShape is not null && (_activeShape.Width < 3 || _activeShape.Height < 3))
         {
@@ -3254,7 +3275,7 @@ internal sealed class ScreenshotCaptureOverlay : Window
 
     private void OnSelectMouseDown(object sender, MouseButtonEventArgs e)
     {
-        if (_editing)
+        if (_editing || e.ChangedButton != MouseButton.Left)
         {
             return;
         }
@@ -3275,6 +3296,11 @@ internal sealed class ScreenshotCaptureOverlay : Window
 
     private void OnSelectMouseUp(object sender, MouseButtonEventArgs e)
     {
+        if (e.ChangedButton != MouseButton.Left)
+        {
+            return;
+        }
+
         if (_editing || _start is null || _capture is null)
         {
             return;
@@ -3795,7 +3821,8 @@ internal sealed class ScreenshotCaptureOverlay : Window
 
     private void ShapeCanvas_MouseDown(object sender, MouseButtonEventArgs e)
     {
-        if (CurrentTool() is not ("Rectangle" or "Ellipse"))
+        if (e.ChangedButton != MouseButton.Left ||
+            CurrentTool() is not ("Rectangle" or "Ellipse"))
         {
             return;
         }
@@ -3833,6 +3860,11 @@ internal sealed class ScreenshotCaptureOverlay : Window
 
     private void ShapeCanvas_MouseUp(object sender, MouseButtonEventArgs e)
     {
+        if (e.ChangedButton != MouseButton.Left)
+        {
+            return;
+        }
+
         _shapeCanvas.ReleaseMouseCapture();
         if (_activeShape is not null && (_activeShape.Width < 3 || _activeShape.Height < 3))
         {
