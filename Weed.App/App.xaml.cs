@@ -176,9 +176,23 @@ public partial class App : System.Windows.Application
                 }
 
                 var result = await _router.ExecutePluginCommandAsync(pluginId, commandId, null, CancellationToken.None);
-                if (!result.Succeeded && !string.IsNullOrWhiteSpace(result.Message))
+                if (!result.Succeeded)
                 {
-                    System.Windows.MessageBox.Show(result.Message, "Weed", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    if (!string.IsNullOrWhiteSpace(result.Message))
+                    {
+                        System.Windows.MessageBox.Show(result.Message, "Weed", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    }
+
+                    return;
+                }
+
+                if (result.Behavior == CommandBehavior.ShowLauncher)
+                {
+                    window.ShowLauncher(result.InitialQuery);
+                }
+                else if (result.Behavior == CommandBehavior.ShowMessage && !string.IsNullOrWhiteSpace(result.Message))
+                {
+                    System.Windows.MessageBox.Show(result.Message, "Weed", MessageBoxButton.OK, MessageBoxImage.Information);
                 }
             }
             finally
