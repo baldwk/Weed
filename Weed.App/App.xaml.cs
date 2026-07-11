@@ -13,6 +13,7 @@ using Weed.Plugins.RunCommand;
 using Weed.Plugins.Screenshot;
 using Weed.Plugins.Translate;
 using Forms = System.Windows.Forms;
+using Microsoft.Win32;
 
 namespace Weed.App;
 
@@ -25,15 +26,49 @@ public partial class App : System.Windows.Application
     private PluginRuntime? _pluginRuntime;
     private HotkeyManager? _hotkeys;
     private Forms.NotifyIcon? _trayIcon;
+    private SingleInstanceCoordinator? _singleInstance;
+    private bool _activationPending;
 
     protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        try
+        {
+            await StartAsync(e);
+        }
+        catch (Exception ex)
+        {
+            _logger?.Error("Weed startup failed.", ex);
+            if (!e.Args.Any(arg => arg.Equals("--startup", StringComparison.OrdinalIgnoreCase)))
+            {
+                System.Windows.MessageBox.Show(ex.Message, "Weed Startup Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+
+            Shutdown(-1);
+        }
+    }
+
+    private async Task StartAsync(StartupEventArgs e)
+    {
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
+
+        var isSilentStartup = e.Args.Any(arg => arg.Equals("--startup", StringComparison.OrdinalIgnoreCase));
+        _singleInstance = new SingleInstanceCoordinator("Desktop");
+        if (!_singleInstance.IsPrimary)
+        {
+            if (!isSilentStartup) await _singleInstance.NotifyPrimaryAsync();
+            Shutdown();
+            return;
+        }
+
+        _singleInstance.ActivationRequested += SingleInstance_ActivationRequested;
+        _singleInstance.StartListening();
 
         var paths = new AppPaths();
         _settings = new SettingsRepository(paths);
         _settings.Load();
+        ThemeManager.Apply(_settings.AppSettings.Theme);
+        SystemEvents.UserPreferenceChanged += SystemEvents_UserPreferenceChanged;
         _logger = new FileWeedLogger(paths.Logs);
         HookCrashLogging(_logger);
         _logger.Info("Weed starting.");
@@ -62,6 +97,7 @@ public partial class App : System.Windows.Application
         _settings.EnsurePluginDefaults(_pluginRuntime.Plugins.Select(p => p.Manifest));
         _router.SetPlugins(_pluginRuntime.Plugins);
 
+        var dependencyStatuses = new List<ExternalDependencyStatus>();
         MainWindow? window = null;
         window = new MainWindow(_router, _settings, _logger, () =>
         {
@@ -72,6 +108,11 @@ public partial class App : System.Windows.Application
         });
         host.LauncherWindow = window;
         MainWindow = window;
+        if (_activationPending)
+        {
+            _activationPending = false;
+            window.ShowLauncher(null);
+        }
 
         _hotkeys = new HotkeyManager();
         _hotkeys.Attach(window);
@@ -80,21 +121,59 @@ public partial class App : System.Windows.Application
         CreateTrayIcon(window);
         QueueStartupUpdateCheck();
 
+        var dependencyCoordinator = new ExternalDependencyCoordinator(_logger);
+        dependencyStatuses.AddRange(await dependencyCoordinator.EnsureAsync(
+            _pluginRuntime.Plugins
+                .Where(plugin => _settings.IsPluginEnabled(plugin.Manifest.Id))
+                .SelectMany(plugin => plugin.Manifest.ExternalDependencies.Select(dependency => (plugin.Manifest.Id, dependency))),
+            CancellationToken.None));
+        window.SetDependencyStatuses(dependencyStatuses);
+        NotifyDependencyFailures(dependencyStatuses);
+
         await _pluginRuntime.StartResidentsAsync(startupCts.Token);
-        window.ShowLauncher(null);
+        if (!isSilentStartup)
+        {
+            window.ShowLauncher(null);
+        }
         _logger.Info("Weed started.");
     }
 
-    protected override async void OnExit(ExitEventArgs e)
+    private void NotifyDependencyFailures(IEnumerable<ExternalDependencyStatus> statuses)
+    {
+        var failed = statuses.Where(status => !status.Available).Select(status => status.Name).Distinct().ToArray();
+        if (failed.Length == 0 || _trayIcon is null)
+        {
+            return;
+        }
+
+        _trayIcon.BalloonTipTitle = "Weed plugin dependency unavailable";
+        _trayIcon.BalloonTipText = $"Could not start: {string.Join(", ", failed)}. Open Settings for details.";
+        _trayIcon.BalloonTipIcon = Forms.ToolTipIcon.Warning;
+        _trayIcon.ShowBalloonTip(5000);
+    }
+
+    protected override void OnExit(ExitEventArgs e)
     {
         try
         {
             _logger?.Info("Weed shutting down.");
+            SystemEvents.UserPreferenceChanged -= SystemEvents_UserPreferenceChanged;
             _trayIcon?.Dispose();
             _hotkeys?.Dispose();
-            if (_pluginRuntime is not null)
+            if (_singleInstance is not null) _singleInstance.ActivationRequested -= SingleInstance_ActivationRequested;
+            var cleanup = Task.Run(async () =>
             {
-                await _pluginRuntime.DisposeAsync();
+                if (_pluginRuntime is not null) await _pluginRuntime.DisposeAsync();
+                if (_singleInstance is not null) await _singleInstance.DisposeAsync();
+            });
+            try
+            {
+                if (!cleanup.Wait(TimeSpan.FromSeconds(5))) _logger?.Warn("Shutdown cleanup timed out.");
+                else cleanup.GetAwaiter().GetResult();
+            }
+            catch (Exception ex)
+            {
+                _logger?.Error("Shutdown cleanup failed.", ex);
             }
             _logger?.Info("Weed stopped.");
         }
@@ -102,6 +181,21 @@ public partial class App : System.Windows.Application
         {
             base.OnExit(e);
         }
+    }
+
+    private void SingleInstance_ActivationRequested()
+    {
+        if (Dispatcher.HasShutdownStarted) return;
+        Dispatcher.BeginInvoke(() =>
+        {
+            if (MainWindow is MainWindow window) window.ShowLauncher(null);
+            else _activationPending = true;
+        });
+    }
+
+    private void SystemEvents_UserPreferenceChanged(object sender, UserPreferenceChangedEventArgs e)
+    {
+        if (!Dispatcher.HasShutdownStarted) Dispatcher.BeginInvoke(ThemeManager.RefreshSystemTheme);
     }
 
     private void RegisterHotkeys(MainWindow window)

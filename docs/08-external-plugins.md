@@ -46,7 +46,17 @@ Every package root must contain `manifest.json`:
       "command": "example.search"
     }
   ],
-  "permissions": []
+  "permissions": ["shell.launch"],
+  "externalDependencies": [
+    {
+      "id": "example-tool",
+      "name": "Example Tool",
+      "executables": ["ExampleTool.exe"],
+      "requiredRunning": true,
+      "autoStart": true,
+      "readinessProbe": "process"
+    }
+  ]
 }
 ```
 
@@ -58,6 +68,10 @@ Important fields:
 - `activations`: supported entry points: `keyword`, `hotkey`, and `implicitQuery`.
 - `permissions`: host capabilities the plugin expects. In the current MVP these are displayed for
   diagnostics and review; they are not a security sandbox.
+- `externalDependencies`: optional programs that must already be running. Weed checks dependencies
+  only for enabled plugins and can locate and start declared executables when `autoStart` is true.
+  Supported readiness probes are `process` and the built-in-specific `everythingIpc`. Dependencies
+  that cannot be started are logged and shown in the plugin details without preventing Weed startup.
 
 ## Development Workflow
 

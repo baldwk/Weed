@@ -33,6 +33,30 @@ public sealed record WeedPluginManifest
 
     [JsonPropertyName("permissions")]
     public IReadOnlyList<string> Permissions { get; init; } = [];
+
+    [JsonPropertyName("externalDependencies")]
+    public IReadOnlyList<PluginExternalDependencyManifest> ExternalDependencies { get; init; } = [];
+}
+
+public sealed record PluginExternalDependencyManifest
+{
+    [JsonPropertyName("id")]
+    public required string Id { get; init; }
+
+    [JsonPropertyName("name")]
+    public required string Name { get; init; }
+
+    [JsonPropertyName("executables")]
+    public IReadOnlyList<string> Executables { get; init; } = [];
+
+    [JsonPropertyName("requiredRunning")]
+    public bool RequiredRunning { get; init; } = true;
+
+    [JsonPropertyName("autoStart")]
+    public bool AutoStart { get; init; }
+
+    [JsonPropertyName("readinessProbe")]
+    public string ReadinessProbe { get; init; } = "process";
 }
 
 public sealed record PluginRuntimeManifest

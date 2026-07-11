@@ -188,6 +188,8 @@ translate ja zh-CN ありがとう
 
 File Search 通过 Everything SDK 查询 Everything 已有的本地索引。Weed 不自行递归扫描磁盘，也不建立自己的全盘文件索引。
 
+Everything SDK DLL 会随 Weed 发布，不需要单独开机自启；但 Everything 后台程序必须运行并提供 IPC。启用 File Search 时，Weed 会在启动阶段检查 IPC，并在需要时尝试启动已安装的 Everything。Weed 不会修改 Everything 自身的开机启动配置。
+
 入口：
 
 ```text

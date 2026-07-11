@@ -86,6 +86,22 @@
           "network"
         ]
       }
+    },
+    "externalDependencies": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "name"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-zA-Z0-9_.-]+$" },
+          "name": { "type": "string", "minLength": 1 },
+          "executables": { "type": "array", "items": { "type": "string" } },
+          "requiredRunning": { "type": "boolean", "default": true },
+          "autoStart": { "type": "boolean", "default": false },
+          "readinessProbe": { "enum": ["process", "everythingIpc"] }
+        }
+      }
     }
   }
 }

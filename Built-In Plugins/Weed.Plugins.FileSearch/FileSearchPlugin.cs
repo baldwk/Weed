@@ -44,6 +44,17 @@ public sealed class FileSearchPlugin : IWeedPlugin, IQueryProvider, ICommandHand
         [
             "file.read",
             "shell.launch"
+        ],
+        ExternalDependencies =
+        [
+            new PluginExternalDependencyManifest
+            {
+                Id = "everything",
+                Name = "Everything",
+                Executables = ["Everything.exe"],
+                AutoStart = true,
+                ReadinessProbe = "everythingIpc"
+            }
         ]
     };
 

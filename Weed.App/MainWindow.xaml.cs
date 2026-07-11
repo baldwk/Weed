@@ -40,6 +40,7 @@ public partial class MainWindow : Window
     private System.Windows.Point? _lastResultsMousePosition;
     private bool _ignoreResultsMouseUntilPointerMoves;
     private string? _hiddenKeywordPrefix;
+    private IReadOnlyList<ExternalDependencyStatus> _dependencyStatuses = [];
 
     public MainWindow(QueryRouter router, SettingsRepository settings, IWeedLogger logger, Action? hotkeysChanged = null)
     {
@@ -115,13 +116,15 @@ public partial class MainWindow : Window
 
     public void ShowSettings()
     {
-        var settingsWindow = new SettingsWindow(_router, _settings, _logger)
+        var settingsWindow = new SettingsWindow(_router, _settings, _logger, _dependencyStatuses)
         {
             Owner = this,
             HotkeysChanged = _hotkeysChanged
         };
         settingsWindow.Show();
     }
+
+    public void SetDependencyStatuses(IReadOnlyList<ExternalDependencyStatus> statuses) => _dependencyStatuses = statuses;
 
     public void ShowClipboardPanel()
     {
@@ -998,26 +1001,31 @@ public sealed class SettingsWindow : Window
     private readonly QueryRouter _router;
     private readonly SettingsRepository _settings;
     private readonly IWeedLogger _logger;
-    private readonly ContentControl _content = new();
+    private readonly IReadOnlyList<ExternalDependencyStatus> _dependencyStatuses;
+    private ContentControl _content = new();
     private readonly List<(SettingsNavItem Item, System.Windows.Controls.Button Button)> _navButtons = [];
     private SettingsNavItem? _selectedNav;
 
     public Action? HotkeysChanged { get; init; }
 
-    public SettingsWindow(QueryRouter router, SettingsRepository settings, IWeedLogger logger)
+    public SettingsWindow(QueryRouter router, SettingsRepository settings, IWeedLogger logger,
+        IReadOnlyList<ExternalDependencyStatus>? dependencyStatuses = null)
     {
         _router = router;
         _settings = settings;
         _logger = logger;
+        _dependencyStatuses = dependencyStatuses ?? [];
         Title = "Weed Preferences";
         Width = 960;
         Height = 660;
         MinWidth = 860;
         MinHeight = 560;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
-        Background = Brush("#111318");
+        Background = ThemeManager.Resource("BackgroundBrush");
         Foreground = (System.Windows.Media.Brush)System.Windows.Application.Current.Resources["TextPrimaryBrush"];
         Content = BuildContent();
+        ThemeManager.Changed += ThemeManager_Changed;
+        Closed += (_, _) => ThemeManager.Changed -= ThemeManager_Changed;
     }
 
     private sealed record SettingsNavItem(string Id, string Title, string Icon, LoadedPlugin? Plugin = null);
@@ -1033,16 +1041,18 @@ public sealed class SettingsWindow : Window
         public string Display => $"{Manifest.Name} {Manifest.Version} - {(IsLoaded ? "Loaded" : "Restart required")}";
     }
 
-    private UIElement BuildContent()
+    private UIElement BuildContent(string? selectedNavId = null)
     {
-        var root = new Grid { Background = Brush("#111318") };
+        _navButtons.Clear();
+        _content = new ContentControl();
+        var root = new Grid { Background = ThemeManager.Resource("BackgroundBrush") };
         root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(220) });
         root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
         var sidebar = new Border
         {
-            Background = Brush("#171A21"),
-            BorderBrush = Brush("#2B303B"),
+            Background = ThemeManager.Resource("SidebarBrush"),
+            BorderBrush = ThemeManager.Resource("BorderBrush"),
             BorderThickness = new Thickness(0, 0, 1, 0)
         };
         var nav = new StackPanel { Margin = new Thickness(12, 14, 12, 14) };
@@ -1063,7 +1073,7 @@ public sealed class SettingsWindow : Window
             Width = 34,
             Height = 34,
             CornerRadius = new CornerRadius(8),
-            Background = Brush("#20242E"),
+            Background = ThemeManager.Resource("ControlBrush"),
             Child = new TextBlock
             {
                 Text = "W",
@@ -1114,9 +1124,24 @@ public sealed class SettingsWindow : Window
         Grid.SetColumn(_content, 1);
         root.Children.Add(_content);
 
-        SelectNav(_navButtons.First().Item);
+        var selectedItem = _navButtons.FirstOrDefault(entry => entry.Item.Id == selectedNavId).Item
+            ?? _navButtons.First().Item;
+        SelectNav(selectedItem);
 
         return root;
+    }
+
+    private void ThemeManager_Changed()
+    {
+        if (Dispatcher.HasShutdownStarted) return;
+        Dispatcher.BeginInvoke(() =>
+        {
+            var selectedNavId = _selectedNav?.Id;
+            Content = null;
+            Background = ThemeManager.Resource("BackgroundBrush");
+            Foreground = ThemeManager.Resource("TextPrimaryBrush");
+            Content = BuildContent(selectedNavId);
+        });
     }
 
     private void AddNavHeader(System.Windows.Controls.Panel nav, string text)
@@ -1159,7 +1184,7 @@ public sealed class SettingsWindow : Window
             Width = 24,
             Height = 24,
             CornerRadius = new CornerRadius(6),
-            Background = Brush("#232834"),
+            Background = ThemeManager.Resource("SurfaceElevatedBrush"),
             Child = item.Plugin is null ? NavPath(item.Icon) : PluginIconElement(item.Plugin, 18)
         });
         var title = new TextBlock
@@ -1200,8 +1225,8 @@ public sealed class SettingsWindow : Window
         foreach (var (navItem, button) in _navButtons)
         {
             var selected = navItem.Id == item.Id;
-            button.Background = selected ? Brush("#273D35") : System.Windows.Media.Brushes.Transparent;
-            button.BorderBrush = selected ? Brush("#3D7A5E") : System.Windows.Media.Brushes.Transparent;
+            button.Background = selected ? ThemeManager.Resource("SelectedNavBrush") : System.Windows.Media.Brushes.Transparent;
+            button.BorderBrush = selected ? ThemeManager.Resource("SelectedNavBorderBrush") : System.Windows.Media.Brushes.Transparent;
             button.BorderThickness = new Thickness(1);
         }
 
@@ -1274,7 +1299,7 @@ public sealed class SettingsWindow : Window
     {
         var row = new Border
         {
-            BorderBrush = Brush("#2B303B"),
+            BorderBrush = ThemeManager.Resource("BorderBrush"),
             BorderThickness = new Thickness(0, 1, 0, 0),
             Padding = new Thickness(0, 12, 0, 12)
         };
@@ -1341,8 +1366,8 @@ public sealed class SettingsWindow : Window
             Padding = new Thickness(8, 5, 8, 5),
             FontSize = 13,
             VerticalContentAlignment = VerticalAlignment.Center,
-            Background = Brush("#20242E"),
-            BorderBrush = Brush("#343B49"),
+            Background = ThemeManager.Resource("ControlBrush"),
+            BorderBrush = ThemeManager.Resource("ControlBorderBrush"),
             BorderThickness = new Thickness(1),
             Foreground = (System.Windows.Media.Brush)System.Windows.Application.Current.Resources["TextPrimaryBrush"]
         };
@@ -1470,8 +1495,8 @@ public sealed class SettingsWindow : Window
             VerticalContentAlignment = VerticalAlignment.Center,
             HorizontalContentAlignment = System.Windows.HorizontalAlignment.Stretch,
             ItemContainerStyle = itemStyle,
-            Background = Brush("#20242E"),
-            BorderBrush = Brush("#343B49"),
+            Background = ThemeManager.Resource("ControlBrush"),
+            BorderBrush = ThemeManager.Resource("ControlBorderBrush"),
             Foreground = (System.Windows.Media.Brush)System.Windows.Application.Current.Resources["TextPrimaryBrush"]
         };
     }
@@ -1485,8 +1510,8 @@ public sealed class SettingsWindow : Window
             foreach (var button in buttons)
             {
                 var active = string.Equals(button.Tag?.ToString(), selected, StringComparison.OrdinalIgnoreCase);
-                button.Background = active ? Brush("#2F6F55") : Brush("#20242E");
-                button.BorderBrush = active ? Brush("#63D297") : Brush("#343B49");
+                button.Background = active ? ThemeManager.Resource("SelectionBrush") : ThemeManager.Resource("ControlBrush");
+                button.BorderBrush = active ? ThemeManager.Resource("AccentBrush") : ThemeManager.Resource("ControlBorderBrush");
             }
         }
 
@@ -1526,12 +1551,19 @@ public sealed class SettingsWindow : Window
         tray.Checked += (_, _) => _settings.SetAppSettings(_settings.AppSettings with { ShowTrayIcon = true });
         tray.Unchecked += (_, _) => _settings.SetAppSettings(_settings.AppSettings with { ShowTrayIcon = false });
 
+        var executablePath = StartupManager.CurrentExecutablePath();
         var launchAtStartup = new System.Windows.Controls.CheckBox
         {
-            IsChecked = _settings.AppSettings.LaunchAtStartup || StartupManager.IsEnabled()
+            IsChecked = executablePath is not null && StartupManager.IsEnabled(executablePath)
         };
-        launchAtStartup.Checked += (_, _) => SetLaunchAtStartup(true);
-        launchAtStartup.Unchecked += (_, _) => SetLaunchAtStartup(false);
+        launchAtStartup.Checked += (_, _) =>
+        {
+            if (launchAtStartup.Tag is not true) SetLaunchAtStartup(launchAtStartup, true);
+        };
+        launchAtStartup.Unchecked += (_, _) =>
+        {
+            if (launchAtStartup.Tag is not true) SetLaunchAtStartup(launchAtStartup, false);
+        };
 
         var hotkey = HotkeyCaptureBox(_settings.AppSettings.MainHotkey, 180, value =>
         {
@@ -1546,7 +1578,10 @@ public sealed class SettingsWindow : Window
                 Section("Appearance",
                     SettingRow("Theme", "Choose how Weed should render native surfaces.",
                         SegmentedControl(["system", "dark", "light"], _settings.AppSettings.Theme, value =>
-                            _settings.SetAppSettings(_settings.AppSettings with { Theme = value })))),
+                        {
+                            _settings.SetAppSettings(_settings.AppSettings with { Theme = value });
+                            ThemeManager.Apply(value);
+                        }))),
                 Section("Startup",
                     SettingRow("Tray icon", "Keep Weed available from the notification area.", tray),
                     SettingRow("Launch at startup", "Register Weed for the current Windows user.", launchAtStartup)),
@@ -1846,8 +1881,8 @@ public sealed class SettingsWindow : Window
             Width = 420,
             Height = 190,
             DisplayMemberPath = nameof(ExternalPluginInstallViewItem.Display),
-            Background = Brush("#20242E"),
-            BorderBrush = Brush("#343B49"),
+            Background = ThemeManager.Resource("ControlBrush"),
+            BorderBrush = ThemeManager.Resource("ControlBorderBrush"),
             BorderThickness = new Thickness(1),
             Foreground = (System.Windows.Media.Brush)System.Windows.Application.Current.Resources["TextPrimaryBrush"]
         };
@@ -2272,12 +2307,14 @@ public sealed class SettingsWindow : Window
             TextValue(plugin.Manifest.Permissions.Count == 0 ? "None" : string.Join(", ", plugin.Manifest.Permissions))));
         content.Children.Add(SettingRow("Activations", "Keywords, hotkeys, and implicit query providers.",
             TextValue(plugin.Manifest.Activations.Count == 0 ? "None" : string.Join(Environment.NewLine, plugin.Manifest.Activations.Select(ActivationText)))));
+        content.Children.Add(SettingRow("Dependencies", "External programs required by this plugin.",
+            TextValue(DependencyText(plugin))));
         content.Children.Add(DiagnosticBlock("Manifest JSON", ManifestText(plugin)));
         content.Children.Add(DiagnosticBlock("Log Tail", LogTail(plugin)));
 
         return new Border
         {
-            BorderBrush = Brush("#2B303B"),
+            BorderBrush = ThemeManager.Resource("BorderBrush"),
             BorderThickness = new Thickness(0, 1, 0, 0),
             Padding = new Thickness(0, 12, 0, 0),
             Margin = new Thickness(0, 0, 0, 28),
@@ -2438,8 +2475,8 @@ public sealed class SettingsWindow : Window
             HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
             Height = height,
             Padding = new Thickness(8),
-            Background = Brush("#20242E"),
-            BorderBrush = Brush("#343B49"),
+            Background = ThemeManager.Resource("ControlBrush"),
+            BorderBrush = ThemeManager.Resource("ControlBorderBrush"),
             BorderThickness = new Thickness(1)
         };
     }
@@ -2448,7 +2485,7 @@ public sealed class SettingsWindow : Window
     {
         return new Border
         {
-            BorderBrush = Brush("#2B303B"),
+            BorderBrush = ThemeManager.Resource("BorderBrush"),
             BorderThickness = new Thickness(0, 1, 0, 0),
             Padding = new Thickness(0, 10, 0, 10),
             Child = new Expander
@@ -2467,8 +2504,8 @@ public sealed class SettingsWindow : Window
                     Height = 220,
                     Margin = new Thickness(0, 8, 0, 0),
                     Padding = new Thickness(8),
-                    Background = Brush("#20242E"),
-                    BorderBrush = Brush("#343B49"),
+                    Background = ThemeManager.Resource("ControlBrush"),
+                    BorderBrush = ThemeManager.Resource("ControlBorderBrush"),
                     BorderThickness = new Thickness(1)
                 }
             }
@@ -2586,15 +2623,26 @@ public sealed class SettingsWindow : Window
         }
     }
 
-    private void SetLaunchAtStartup(bool enabled)
+    private static string DependencyKey(string pluginId, string dependencyId) => $"{pluginId}:{dependencyId}";
+
+    private string DependencyText(LoadedPlugin plugin)
+    {
+        if (plugin.Manifest.ExternalDependencies.Count == 0) return "None";
+        var statuses = _dependencyStatuses.ToDictionary(status => DependencyKey(status.PluginId, status.DependencyId), StringComparer.OrdinalIgnoreCase);
+        return string.Join(Environment.NewLine, plugin.Manifest.ExternalDependencies.Select(dependency =>
+        {
+            var state = statuses.TryGetValue(DependencyKey(plugin.Manifest.Id, dependency.Id), out var status)
+                ? status.Available ? "Available" : status.Message
+                : "Not checked";
+            return $"{dependency.Name}: {state}";
+        }));
+    }
+
+    private void SetLaunchAtStartup(System.Windows.Controls.CheckBox checkBox, bool enabled)
     {
         try
         {
-            var executablePath = Environment.ProcessPath ?? System.Reflection.Assembly.GetEntryAssembly()?.Location ?? string.Empty;
-            if (string.IsNullOrWhiteSpace(executablePath))
-            {
-                return;
-            }
+            var executablePath = StartupManager.CurrentExecutablePath() ?? throw new InvalidOperationException("The Weed executable path is unavailable.");
 
             StartupManager.SetEnabled(enabled, executablePath);
             _settings.SetAppSettings(_settings.AppSettings with { LaunchAtStartup = enabled });
@@ -2602,6 +2650,9 @@ public sealed class SettingsWindow : Window
         catch (Exception ex)
         {
             _logger.Error("Failed to update startup setting.", ex);
+            checkBox.Tag = true;
+            checkBox.IsChecked = !enabled;
+            checkBox.Tag = null;
             System.Windows.MessageBox.Show($"Failed to update startup setting: {ex.Message}", "Weed", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
     }

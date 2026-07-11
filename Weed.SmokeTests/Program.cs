@@ -19,6 +19,26 @@ var paths = new AppPaths(Path.Combine(root, "appdata"), Path.Combine(root, "loca
 var settings = new SettingsRepository(paths);
 settings.Load();
 var logger = new ConsoleWeedLogger();
+await VerifySingleInstanceAsync();
+Require(StartupManager.BuildCommand(@"C:\Program Files\Weed\Weed.exe") == "\"C:\\Program Files\\Weed\\Weed.exe\" --startup",
+    "startup command should quote the executable and mark login startup");
+Require(FileSearchPlugin.Manifest.ExternalDependencies.Any(dependency =>
+        dependency.Id == "everything" && dependency.AutoStart && dependency.ReadinessProbe == "everythingIpc"),
+    "File Search should declare its Everything runtime dependency");
+var dependency = FileSearchPlugin.Manifest.ExternalDependencies.Single(dependency => dependency.Id == "everything");
+var dependencyProbeCount = 0;
+var dependencyStartCount = 0;
+var dependencyCoordinator = new ExternalDependencyCoordinator(logger, TimeSpan.FromMilliseconds(50),
+    _ => ++dependencyProbeCount >= 2,
+    _ => @"C:\Everything\Everything.exe",
+    _ => dependencyStartCount++);
+var dependencyStatuses = await dependencyCoordinator.EnsureAsync([(FileSearchPlugin.PluginId, dependency)], CancellationToken.None);
+Require(dependencyStartCount == 1 && dependencyStatuses.Single().Available,
+    "dependency coordinator should start an unavailable dependency once and wait for readiness");
+var missingDependencyCoordinator = new ExternalDependencyCoordinator(logger, TimeSpan.FromMilliseconds(10), _ => false, _ => null, _ => { });
+var missingDependencyStatuses = await missingDependencyCoordinator.EnsureAsync([(FileSearchPlugin.PluginId, dependency)], CancellationToken.None);
+Require(!missingDependencyStatuses.Single().Available,
+    "dependency coordinator should report a missing executable without blocking startup");
 var host = new SmokeHost(logger, settings);
 await VerifyExternalPluginImportAsync(root, paths);
 
@@ -658,6 +678,22 @@ Require(File.Exists(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..
 Require(File.Exists(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "schemas", "manifest.schema.json")), "plugin manifest schema should exist");
 
 Console.WriteLine("Smoke checks passed.");
+
+static async Task VerifySingleInstanceAsync()
+{
+    var instanceId = $"Smoke.{Guid.NewGuid():N}";
+    await using var primary = new SingleInstanceCoordinator(instanceId);
+    Require(primary.IsPrimary, "the first coordinator should own the application instance");
+
+    var activation = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+    primary.ActivationRequested += () => activation.TrySetResult();
+    primary.StartListening();
+
+    await using var secondary = new SingleInstanceCoordinator(instanceId);
+    Require(!secondary.IsPrimary, "a second coordinator should be rejected");
+    await secondary.NotifyPrimaryAsync();
+    await activation.Task.WaitAsync(TimeSpan.FromSeconds(3));
+}
 
 static async Task VerifyExternalPluginImportAsync(string root, AppPaths paths)
 {
