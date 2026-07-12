@@ -1,24 +1,42 @@
 {
-  "$schema": "schemas/plugin-registry.schema.json",
-  "schemaVersion": "1",
-  "plugins": [
-    {
-      "id": "weed.toolbox",
-      "name": "Toolbox",
-      "description": "Offline UUID, timestamp, Base64, URL, hash, and JSON utilities.",
-      "version": "0.1.0",
-      "sdkVersion": "0.1",
-      "minWeedVersion": "0.1.6",
-      "packageUrl": "https://github.com/baldwk/Weed/releases/download/toolbox-v0.1.0/weed.toolbox-0.1.0-win-x64.zip",
-      "sha256": "ec7007630dd1f8f14ef211f3aa442e2f3d81a737c46734e8425c65c594559df0",
-      "repositoryUrl": "https://github.com/baldwk/Weed",
-      "releaseNotesUrl": "https://github.com/baldwk/Weed/releases/tag/toolbox-v0.1.0",
-      "trusted": true,
-      "tags": [
-        "utility",
-        "developer",
-        "offline"
-      ]
-    }
-  ]
+    "$schema":  "schemas/plugin-registry.schema.json",
+    "schemaVersion":  "1",
+    "plugins":  [
+                    {
+                        "id":  "weed.ocr",
+                        "name":  "OCR",
+                        "description":  "Local OCR for screen regions and image files using PP-OCRv5 models.",
+                        "version":  "0.1.0",
+                        "sdkVersion":  "0.1",
+                        "minWeedVersion":  "0.1.6",
+                        "packageUrl":  "https://github.com/baldwk/Weed/releases/download/ocr-v0.1.0/weed.ocr-0.1.0-win-x64.zip",
+                        "sha256":  "f51c985bd9c8d269b5106a56a62bb0a41cc19881f3b0b29d4a0e3330f21326ef",
+                        "repositoryUrl":  "https://github.com/baldwk/Weed",
+                        "releaseNotesUrl":  "https://github.com/baldwk/Weed/releases/tag/ocr-v0.1.0",
+                        "trusted":  true,
+                        "tags":  [
+                                     "ocr",
+                                     "offline",
+                                     "screen-capture"
+                                 ]
+                    },
+                    {
+                        "id":  "weed.toolbox",
+                        "name":  "Toolbox",
+                        "description":  "Offline UUID, timestamp, Base64, URL, hash, and JSON utilities.",
+                        "version":  "0.1.0",
+                        "sdkVersion":  "0.1",
+                        "minWeedVersion":  "0.1.6",
+                        "packageUrl":  "https://github.com/baldwk/Weed/releases/download/toolbox-v0.1.0/weed.toolbox-0.1.0-win-x64.zip",
+                        "sha256":  "ec7007630dd1f8f14ef211f3aa442e2f3d81a737c46734e8425c65c594559df0",
+                        "repositoryUrl":  "https://github.com/baldwk/Weed",
+                        "releaseNotesUrl":  "https://github.com/baldwk/Weed/releases/tag/toolbox-v0.1.0",
+                        "trusted":  true,
+                        "tags":  [
+                                     "utility",
+                                     "developer",
+                                     "offline"
+                                 ]
+                    }
+                ]
 }
