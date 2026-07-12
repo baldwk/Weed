@@ -1,6 +1,6 @@
 # Changelog
 
-## Pre-release
+## 0.1.6
 
 - Converted the complete user, plugin, template, and developer documentation set to English.
 
