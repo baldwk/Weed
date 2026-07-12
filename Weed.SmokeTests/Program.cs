@@ -20,6 +20,8 @@ var paths = new AppPaths(Path.Combine(root, "appdata"), Path.Combine(root, "loca
 var settings = new SettingsRepository(paths);
 settings.Load();
 var logger = new ConsoleWeedLogger();
+Require(new WeedAppSettings().ExternalPluginRegistryUrl == WeedAppSettings.DefaultExternalPluginRegistryUrl,
+    "new settings should use the official stable plugin registry");
 await VerifySingleInstanceAsync();
 Require(StartupManager.BuildCommand(@"C:\Program Files\Weed\Weed.exe") == "\"C:\\Program Files\\Weed\\Weed.exe\" --startup",
     "startup command should quote the executable and mark login startup");
@@ -792,7 +794,15 @@ static async Task VerifyExternalPluginImportAsync(
     Require(sourceResult.Succeeded, "external plugin source folder import should publish and copy the plugin");
     Require(File.Exists(Path.Combine(sourcePluginsRoot, "source.external", "Source.External.dll")), "external plugin source import should publish the assembly");
 
-    var registryHash = ExternalPluginRegistryService.Sha256File(zipPath);
+    var registrySource = Path.Combine(root, "registry-plugin-source");
+    CopyDirectoryForSmoke(source, registrySource);
+    var registryManifestPath = Path.Combine(registrySource, "manifest.json");
+    var registryManifest = (await File.ReadAllTextAsync(registryManifestPath))
+        .Replace("\"version\": \"0.1.0\"", "\"version\": \"0.2.0\"", StringComparison.Ordinal);
+    await File.WriteAllTextAsync(registryManifestPath, registryManifest);
+    var registryPackagePath = Path.Combine(root, "example-external-0.2.zip");
+    ZipFile.CreateFromDirectory(registrySource, registryPackagePath);
+    var registryHash = ExternalPluginRegistryService.Sha256File(registryPackagePath);
     var registryPath = Path.Combine(root, "plugin-registry.json");
     await File.WriteAllTextAsync(registryPath, $$"""
     {
@@ -805,7 +815,7 @@ static async Task VerifyExternalPluginImportAsync(
           "version": "0.2.0",
           "sdkVersion": "0.1",
           "minWeedVersion": "0.1.0",
-          "packageUrl": "example-external.zip",
+          "packageUrl": "example-external-0.2.zip",
           "sha256": "{{registryHash}}",
           "repositoryUrl": "https://github.com/example/example.external",
           "releaseNotesUrl": "https://github.com/example/example.external/releases/tag/v0.2.0",
@@ -817,6 +827,15 @@ static async Task VerifyExternalPluginImportAsync(
     """);
 
     var registryService = new ExternalPluginRegistryService();
+    var stableRegistry = await registryService.ReadRegistryAsync(
+        Path.Combine(Environment.CurrentDirectory, "plugins.registry.json"),
+        CancellationToken.None);
+    Require(stableRegistry.Plugins.Any(plugin =>
+            plugin.Id == ToolboxPlugin.PluginId &&
+            plugin.PackageUrl.Contains("toolbox-v0.1.0", StringComparison.Ordinal) &&
+            plugin.Sha256.Length == 64),
+        "stable plugin registry should publish the verified Toolbox release");
+
     var registry = await registryService.ReadRegistryAsync(registryPath, CancellationToken.None);
     Require(registry.Plugins.Count == 1 && registry.Plugins[0].Id == "example.external", "external plugin registry should parse plugin entries");
     var plans = registryService.BuildInstallPlans(registry, paths.Plugins);
@@ -831,6 +850,24 @@ static async Task VerifyExternalPluginImportAsync(
         CancellationToken.None);
     Require(registryInstall.Succeeded, "external plugin registry install should download, verify, and import a ZIP");
     Require(File.Exists(Path.Combine(registryInstallRoot, "example.external", "manifest.json")), "external plugin registry install should copy the manifest");
+
+    var mismatchedPackage = await registryService.DownloadAndImportAsync(
+        registry.Plugins[0] with { Id = "different.external" },
+        registryPath,
+        Path.Combine(root, "mismatched-registry-plugins"),
+        Path.Combine(root, "mismatched-registry-downloads"),
+        CancellationToken.None);
+    Require(!mismatchedPackage.Succeeded && mismatchedPackage.Message.Contains("does not match registry id", StringComparison.Ordinal),
+        "external plugin registry should reject packages whose manifest id differs from the registry");
+
+    var mismatchedVersion = await registryService.DownloadAndImportAsync(
+        registry.Plugins[0] with { Version = "0.3.0" },
+        registryPath,
+        Path.Combine(root, "mismatched-version-plugins"),
+        Path.Combine(root, "mismatched-version-downloads"),
+        CancellationToken.None);
+    Require(!mismatchedVersion.Succeeded && mismatchedVersion.Message.Contains("does not match registry version", StringComparison.Ordinal),
+        "external plugin registry should reject packages whose manifest version differs from the registry");
 
     var badHashInstall = await registryService.DownloadAndImportAsync(
         registry.Plugins[0] with { Sha256 = new string('0', 64) },
@@ -882,6 +919,22 @@ static async Task VerifyExternalPluginImportAsync(
         await runtime.ScanDirectoryAsync(pendingRoot, CancellationToken.None);
     }
     Require(!Directory.Exists(pendingPlugin), "plugin startup should clean pending uninstall directories");
+}
+
+static void CopyDirectoryForSmoke(string source, string destination)
+{
+    Directory.CreateDirectory(destination);
+    foreach (var directory in Directory.EnumerateDirectories(source, "*", SearchOption.AllDirectories))
+    {
+        Directory.CreateDirectory(Path.Combine(destination, Path.GetRelativePath(source, directory)));
+    }
+
+    foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
+    {
+        var target = Path.Combine(destination, Path.GetRelativePath(source, file));
+        Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+        File.Copy(file, target, overwrite: true);
+    }
 }
 
 async Task AddPluginAsync(WeedPluginManifest manifest, IWeedPlugin plugin)

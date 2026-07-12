@@ -7,6 +7,9 @@ namespace Weed.Core;
 
 public sealed record WeedAppSettings
 {
+    public const string DefaultExternalPluginRegistryUrl =
+        "https://raw.githubusercontent.com/baldwk/Weed/master/plugins.registry.json";
+
     public string Theme { get; init; } = "system";
 
     public bool ShowTrayIcon { get; init; } = true;
@@ -17,7 +20,7 @@ public sealed record WeedAppSettings
 
     public string UpdateManifestUrl { get; init; } = string.Empty;
 
-    public string ExternalPluginRegistryUrl { get; init; } = string.Empty;
+    public string ExternalPluginRegistryUrl { get; init; } = DefaultExternalPluginRegistryUrl;
 
     public string MainHotkey { get; init; } = "Alt+Space";
 

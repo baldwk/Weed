@@ -12,7 +12,7 @@ Weed is a fast launcher and productivity tool for Windows. Press `Alt+Space` to 
 - **File search:** Search the local Everything index for files and folders.
 - **Emoji search:** Find emoji by name, alias, category, or shortcode.
 - **System commands:** Open Task Manager, Registry Editor, Services, Control Panel, and other common Windows tools.
-- **External plugins:** Import plugins from ZIP packages, DLLs, published folders, or source folders.
+- **External plugins:** Install verified catalog packages, update or uninstall installed plugins, or import ZIP packages, DLLs, published folders, and source folders.
 
 ## Screenshots
 

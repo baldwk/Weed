@@ -39,7 +39,7 @@ Open Settings from the button in the upper-right corner of the search window.
 - **General:** Tray icon, close-on-focus-loss behavior, launch at startup, and appearance.
 - **Hotkeys:** Main activation hotkey and plugin hotkeys. Choose another combination if a hotkey conflicts with another app.
 - **Plugin pages:** Enable or disable a plugin, adjust implicit-query priority, edit plugin options, and inspect permissions, dependencies, manifests, and logs.
-- **External Plugins:** Import plugins from a ZIP, DLL, published folder, or source folder.
+- **External Plugins:** Install or update verified catalog packages, uninstall installed packages, or import a ZIP, DLL, published folder, or source folder.
 - **Updates:** Configure the update manifest and check for new releases.
 
 Settings are saved automatically. Restart Weed after replacing an external plugin or when a plugin explicitly requires a restart.
@@ -50,7 +50,9 @@ File Search depends on [Everything](https://www.voidtools.com/) for the local fi
 
 ## External Plugins
 
-Open **Settings > External Plugins**, choose a plugin ZIP, DLL, published folder, or source folder, then restart Weed after import. To uninstall a package, select it in the installed list, choose **Uninstall**, confirm the removal, and restart Weed. Plugin settings and data are preserved so reinstalling the same plugin can reuse them.
+Open **Settings > External Plugins** to browse the stable catalog. Select a compatible package and choose **Install** or **Update**; Weed downloads it, verifies its SHA256 checksum and manifest identity, and imports it into the user plugin directory. Restart Weed after installation or update.
+
+Manual import remains available for a plugin ZIP, DLL, published folder, or source folder. To uninstall a package, select it in the installed list, choose **Uninstall**, confirm the removal, and restart Weed. Plugin settings and data are preserved so reinstalling the same plugin can reuse them. The official registry URL is configured by default and can be changed on the same page for development or private catalogs.
 
 External plugins are not sandboxed. They run inside the Weed process and may access the screen, clipboard, files, or network according to their declared capabilities. Install only trusted plugins with a clear source and version.
 

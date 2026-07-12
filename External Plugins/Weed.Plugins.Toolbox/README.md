@@ -43,4 +43,6 @@ Create an importable package from the repository root:
 powershell -ExecutionPolicy Bypass -File scripts\package-toolbox-plugin.ps1
 ```
 
+The shared release packager emits the versioned ZIP, SHA256 file, and registry metadata under `artifacts\plugins`.
+
 Import the resulting ZIP under **Settings > External Plugins**, then restart Weed.

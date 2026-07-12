@@ -1044,6 +1044,21 @@ public sealed class SettingsWindow : Window
         public string StatusText => IsLoaded ? "Loaded in this session" : "Installed - restart required";
     }
 
+    private sealed class ExternalPluginCatalogViewItem
+    {
+        public required ExternalPluginInstallPlan Plan { get; init; }
+
+        public string Name => Plan.Entry.Name;
+
+        public string VersionText => $"v{Plan.Entry.Version}";
+
+        public string Description => Plan.Entry.Description;
+
+        public string StatusText => Plan.Message;
+
+        public string ActionText => Plan.State == ExternalPluginInstallState.UpdateAvailable ? "Update" : "Install";
+    }
+
     private UIElement BuildContent(string? selectedNavId = null)
     {
         _navButtons.Clear();
@@ -1946,8 +1961,115 @@ public sealed class SettingsWindow : Window
         return style;
     }
 
+    private DataTemplate ExternalPluginCatalogItemTemplate()
+    {
+        var root = new FrameworkElementFactory(typeof(StackPanel));
+        root.SetValue(FrameworkElement.MarginProperty, new Thickness(2));
+
+        var header = new FrameworkElementFactory(typeof(DockPanel));
+        header.SetValue(DockPanel.LastChildFillProperty, true);
+
+        var version = new FrameworkElementFactory(typeof(TextBlock));
+        version.SetBinding(TextBlock.TextProperty, new WpfBinding(nameof(ExternalPluginCatalogViewItem.VersionText)));
+        version.SetValue(TextBlock.FontSizeProperty, 11.0);
+        version.SetValue(TextBlock.ForegroundProperty, ThemeManager.Resource("TextSecondaryBrush"));
+        version.SetValue(FrameworkElement.MarginProperty, new Thickness(12, 2, 0, 0));
+        version.SetValue(DockPanel.DockProperty, Dock.Right);
+        header.AppendChild(version);
+
+        var name = new FrameworkElementFactory(typeof(TextBlock));
+        name.SetBinding(TextBlock.TextProperty, new WpfBinding(nameof(ExternalPluginCatalogViewItem.Name)));
+        name.SetValue(TextBlock.FontSizeProperty, 14.0);
+        name.SetValue(TextBlock.FontWeightProperty, FontWeights.SemiBold);
+        name.SetValue(TextBlock.ForegroundProperty, ThemeManager.Resource("TextPrimaryBrush"));
+        name.SetValue(TextBlock.TextTrimmingProperty, TextTrimming.CharacterEllipsis);
+        header.AppendChild(name);
+        root.AppendChild(header);
+
+        var description = new FrameworkElementFactory(typeof(TextBlock));
+        description.SetBinding(TextBlock.TextProperty, new WpfBinding(nameof(ExternalPluginCatalogViewItem.Description)));
+        description.SetValue(TextBlock.FontSizeProperty, 12.0);
+        description.SetValue(TextBlock.ForegroundProperty, ThemeManager.Resource("TextSecondaryBrush"));
+        description.SetValue(FrameworkElement.MarginProperty, new Thickness(0, 4, 0, 0));
+        description.SetValue(TextBlock.TextTrimmingProperty, TextTrimming.CharacterEllipsis);
+        root.AppendChild(description);
+
+        var status = new FrameworkElementFactory(typeof(TextBlock));
+        status.SetBinding(TextBlock.TextProperty, new WpfBinding(nameof(ExternalPluginCatalogViewItem.StatusText)));
+        status.SetValue(TextBlock.FontSizeProperty, 11.0);
+        status.SetValue(TextBlock.FontWeightProperty, FontWeights.SemiBold);
+        status.SetValue(TextBlock.ForegroundProperty, ThemeManager.Resource("TextSecondaryBrush"));
+        status.SetValue(FrameworkElement.MarginProperty, new Thickness(0, 3, 0, 0));
+        status.SetValue(TextBlock.TextTrimmingProperty, TextTrimming.CharacterEllipsis);
+        root.AppendChild(status);
+
+        return new DataTemplate(typeof(ExternalPluginCatalogViewItem)) { VisualTree = root };
+    }
+
     private UIElement BuildExternalPluginsTab()
     {
+        var configuredRegistry = string.IsNullOrWhiteSpace(_settings.AppSettings.ExternalPluginRegistryUrl)
+            ? WeedAppSettings.DefaultExternalPluginRegistryUrl
+            : _settings.AppSettings.ExternalPluginRegistryUrl;
+        var loadedCatalogLocation = configuredRegistry;
+        var registryLocation = StyledTextBox(configuredRegistry, 420);
+        var refreshCatalog = new System.Windows.Controls.Button
+        {
+            Content = "Refresh",
+            Padding = new Thickness(12, 6, 12, 6),
+            MinHeight = 34,
+            FontSize = 13,
+            VerticalContentAlignment = VerticalAlignment.Center
+        };
+        var installCatalogPlugin = new System.Windows.Controls.Button
+        {
+            Content = "Install",
+            Padding = new Thickness(12, 6, 12, 6),
+            Margin = new Thickness(8, 0, 0, 0),
+            MinHeight = 34,
+            FontSize = 13,
+            IsEnabled = false,
+            VerticalContentAlignment = VerticalAlignment.Center
+        };
+        var openReleaseNotes = new System.Windows.Controls.Button
+        {
+            Content = "Release notes",
+            Padding = new Thickness(12, 6, 12, 6),
+            Margin = new Thickness(8, 0, 0, 0),
+            MinHeight = 34,
+            FontSize = 13,
+            IsEnabled = false,
+            VerticalContentAlignment = VerticalAlignment.Center
+        };
+        var catalogActions = new StackPanel
+        {
+            Orientation = System.Windows.Controls.Orientation.Horizontal,
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Right
+        };
+        catalogActions.Children.Add(refreshCatalog);
+        catalogActions.Children.Add(installCatalogPlugin);
+        catalogActions.Children.Add(openReleaseNotes);
+
+        var catalogList = new System.Windows.Controls.ListBox
+        {
+            Width = 420,
+            Height = 250,
+            Padding = new Thickness(4),
+            ItemTemplate = ExternalPluginCatalogItemTemplate(),
+            ItemContainerStyle = ExternalPluginItemContainerStyle(),
+            Background = ThemeManager.Resource("ControlBrush"),
+            BorderBrush = ThemeManager.Resource("ControlBorderBrush"),
+            BorderThickness = new Thickness(1),
+            Foreground = ThemeManager.Resource("TextPrimaryBrush")
+        };
+        var catalogStatus = new TextBlock
+        {
+            Text = "Loading the stable plugin catalog...",
+            TextWrapping = TextWrapping.Wrap,
+            TextAlignment = TextAlignment.Right,
+            Foreground = ThemeManager.Resource("TextSecondaryBrush")
+        };
+
         var refreshInstalled = new System.Windows.Controls.Button
         {
             Content = "Refresh",
@@ -2062,6 +2184,76 @@ public sealed class SettingsWindow : Window
             }
         }
 
+        string SaveAndGetRegistryLocation()
+        {
+            var value = registryLocation.Text.Trim();
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                value = WeedAppSettings.DefaultExternalPluginRegistryUrl;
+                registryLocation.Text = value;
+            }
+
+            if (!value.Equals(_settings.AppSettings.ExternalPluginRegistryUrl, StringComparison.Ordinal))
+            {
+                _settings.SetAppSettings(_settings.AppSettings with { ExternalPluginRegistryUrl = value });
+            }
+
+            return value;
+        }
+
+        void UpdateCatalogSelection()
+        {
+            if (catalogList.SelectedItem is not ExternalPluginCatalogViewItem selected)
+            {
+                installCatalogPlugin.IsEnabled = false;
+                openReleaseNotes.IsEnabled = false;
+                return;
+            }
+
+            installCatalogPlugin.Content = selected.ActionText;
+            installCatalogPlugin.IsEnabled = selected.Plan.CanInstall;
+            openReleaseNotes.IsEnabled = !string.IsNullOrWhiteSpace(selected.Plan.Entry.ReleaseNotesUrl) ||
+                                         !string.IsNullOrWhiteSpace(selected.Plan.Entry.RepositoryUrl);
+            catalogStatus.Text = selected.Plan.Message;
+        }
+
+        async Task RefreshCatalogAsync()
+        {
+            refreshCatalog.IsEnabled = false;
+            installCatalogPlugin.IsEnabled = false;
+            openReleaseNotes.IsEnabled = false;
+            catalogStatus.Text = "Loading the stable plugin catalog...";
+            try
+            {
+                var location = SaveAndGetRegistryLocation();
+                var service = new ExternalPluginRegistryService();
+                var registry = await service.ReadRegistryAsync(location, CancellationToken.None);
+                loadedCatalogLocation = location;
+                var items = service.BuildInstallPlans(registry, _settings.Paths.Plugins)
+                    .Select(plan => new ExternalPluginCatalogViewItem { Plan = plan })
+                    .ToArray();
+                catalogList.ItemsSource = items;
+                if (items.Length == 0)
+                {
+                    catalogStatus.Text = "The stable plugin catalog is empty.";
+                    return;
+                }
+
+                catalogList.SelectedIndex = 0;
+                UpdateCatalogSelection();
+            }
+            catch (Exception ex)
+            {
+                _logger.Error("External plugin catalog refresh failed.", ex);
+                catalogList.ItemsSource = null;
+                catalogStatus.Text = $"Catalog refresh failed: {ex.Message}";
+            }
+            finally
+            {
+                refreshCatalog.IsEnabled = true;
+            }
+        }
+
         installedList.SelectionChanged += (_, _) =>
         {
             if (installedList.SelectedItem is ExternalPluginInstallViewItem selected)
@@ -2075,7 +2267,70 @@ public sealed class SettingsWindow : Window
             }
         };
 
+        catalogList.SelectionChanged += (_, _) => UpdateCatalogSelection();
+
         refreshInstalled.Click += (_, _) => RefreshInstalled();
+        refreshCatalog.Click += async (_, _) => await RefreshCatalogAsync();
+
+        installCatalogPlugin.Click += async (_, _) =>
+        {
+            if (catalogList.SelectedItem is not ExternalPluginCatalogViewItem selected || !selected.Plan.CanInstall)
+            {
+                return;
+            }
+
+            var trustNotice = selected.Plan.Entry.Trusted
+                ? "This package is listed as a trusted first-party plugin."
+                : "This package is not marked as trusted. Review its source before installing.";
+            var confirmation = System.Windows.MessageBox.Show(
+                this,
+                $"{selected.ActionText} {selected.Plan.Entry.Name} v{selected.Plan.Entry.Version}?" +
+                $"{Environment.NewLine}{Environment.NewLine}{trustNotice}" +
+                $"{Environment.NewLine}The SHA256 checksum will be verified before import.",
+                $"{selected.ActionText} External Plugin",
+                MessageBoxButton.YesNo,
+                selected.Plan.Entry.Trusted ? MessageBoxImage.Information : MessageBoxImage.Warning);
+            if (confirmation != MessageBoxResult.Yes)
+            {
+                return;
+            }
+
+            refreshCatalog.IsEnabled = false;
+            installCatalogPlugin.IsEnabled = false;
+            catalogStatus.Text = $"Downloading {selected.Plan.Entry.Name}...";
+            var result = await new ExternalPluginRegistryService().DownloadAndImportAsync(
+                selected.Plan.Entry,
+                loadedCatalogLocation,
+                _settings.Paths.Plugins,
+                Path.Combine(_settings.Paths.Updates, "plugins"),
+                CancellationToken.None);
+            catalogStatus.Text = result.Message;
+            System.Windows.MessageBox.Show(
+                this,
+                result.Message,
+                "External Plugin Catalog",
+                MessageBoxButton.OK,
+                result.Succeeded ? MessageBoxImage.Information : MessageBoxImage.Warning);
+            RefreshInstalled();
+            await RefreshCatalogAsync();
+        };
+
+        openReleaseNotes.Click += (_, _) =>
+        {
+            if (catalogList.SelectedItem is not ExternalPluginCatalogViewItem selected)
+            {
+                return;
+            }
+
+            var location = string.IsNullOrWhiteSpace(selected.Plan.Entry.ReleaseNotesUrl)
+                ? selected.Plan.Entry.RepositoryUrl
+                : selected.Plan.Entry.ReleaseNotesUrl;
+            if (Uri.TryCreate(location, UriKind.Absolute, out var uri) &&
+                uri.Scheme is "http" or "https")
+            {
+                Process.Start(new ProcessStartInfo(uri.ToString()) { UseShellExecute = true });
+            }
+        };
 
         importPackage.Click += async (_, _) =>
         {
@@ -2149,11 +2404,17 @@ public sealed class SettingsWindow : Window
         };
 
         RefreshInstalled();
+        _ = RefreshCatalogAsync();
 
         return PageShell(
             "External Plugins",
             "Import, inspect, or uninstall external plugin packages. Restart Weed after installation, replacement, or removal.",
             [
+                Section("Catalog",
+                    SettingRow("Actions", "Install or update a verified package from the stable registry.", catalogActions),
+                    SettingRow("Available", "Stable external plugins and compatibility status.", catalogList),
+                    SettingRow("Registry", "Catalog source. Leave the official URL unless testing another registry.", registryLocation),
+                    SettingRow("Status", "Selected catalog package and install state.", catalogStatus)),
                 Section("Installed",
                     SettingRow("Actions", "Refresh, open the plugin folder, or uninstall the selected package.", installedActions),
                     SettingRow("Plugins", "External plugins installed under the user plugin directory.", installedList),

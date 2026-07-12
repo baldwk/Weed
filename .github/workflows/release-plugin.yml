@@ -1,0 +1,85 @@
+name: Release external plugin
+
+on:
+  workflow_dispatch:
+    inputs:
+      plugin:
+        description: Plugin to release
+        required: true
+        type: choice
+        options:
+          - weed.toolbox
+          - weed.ocr
+      version:
+        description: Version from the plugin manifest
+        required: true
+        type: string
+      prerelease:
+        description: Publish without updating the stable registry
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Check out master
+        uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 0
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Configure Git identity
+        shell: powershell
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Release stable plugin
+        if: ${{ !inputs.prerelease }}
+        shell: powershell
+        run: >-
+          .\scripts\release-plugin-github.ps1
+          -PluginId '${{ inputs.plugin }}'
+          -Version '${{ inputs.version }}'
+          -Branch master
+
+      - name: Release preview plugin
+        if: ${{ inputs.prerelease }}
+        shell: powershell
+        run: >-
+          .\scripts\release-plugin-github.ps1
+          -PluginId '${{ inputs.plugin }}'
+          -Version '${{ inputs.version }}'
+          -Branch master
+          -Prerelease
+
+      - name: Update stable registry
+        if: ${{ !inputs.prerelease }}
+        shell: powershell
+        run: >-
+          .\scripts\update-plugin-registry.ps1
+          -MetadataPath '.\artifacts\plugins\${{ inputs.plugin }}-${{ inputs.version }}.plugin-release.json'
+
+      - name: Create registry pull request
+        if: ${{ !inputs.prerelease }}
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: automation/plugin-registry-${{ inputs.plugin }}-${{ inputs.version }}
+          commit-message: "chore: publish ${{ inputs.plugin }} ${{ inputs.version }} in registry"
+          title: "Publish ${{ inputs.plugin }} ${{ inputs.version }} in plugin registry"
+          body: "Updates the stable Weed plugin registry after the release assets and checksum were published."
+          add-paths: plugins.registry.json

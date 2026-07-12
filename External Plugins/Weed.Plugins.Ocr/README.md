@@ -31,6 +31,16 @@ Recognition runs locally and does not upload images to an online OCR service. Re
 
 External plugins run inside the Weed process. Import packages only from sources you trust.
 
+## Maintainer Packaging
+
+Create a complete release package from the repository root:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\package-ocr-plugin.ps1
+```
+
+The shared release packager downloads the pinned model set, verifies every model checksum, and emits the versioned ZIP, SHA256 file, and registry metadata under `artifacts\plugins`.
+
 ## Troubleshooting
 
 - **OCR does not appear after import:** Restart Weed and confirm the plugin is enabled under **Settings > Plugins**.

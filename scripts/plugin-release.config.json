@@ -1,0 +1,35 @@
+{
+  "schemaVersion": "1",
+  "repository": "baldwk/Weed",
+  "plugins": [
+    {
+      "id": "weed.ocr",
+      "slug": "ocr",
+      "name": "OCR",
+      "project": "External Plugins/Weed.Plugins.Ocr/Weed.Plugins.Ocr.csproj",
+      "description": "Local OCR for screen regions and image files using PP-OCRv5 models.",
+      "minWeedVersion": "0.1.6",
+      "trusted": true,
+      "tags": ["ocr", "offline", "screen-capture"],
+      "fetchModels": true,
+      "requiredFiles": [
+        "models/ch_PP-OCRv5_mobile_det.onnx",
+        "models/ch_ppocr_mobile_v2.0_cls_infer.onnx",
+        "models/ch_PP-OCRv5_rec_mobile_infer.onnx",
+        "models/ppocrv5_dict.txt"
+      ]
+    },
+    {
+      "id": "weed.toolbox",
+      "slug": "toolbox",
+      "name": "Toolbox",
+      "project": "External Plugins/Weed.Plugins.Toolbox/Weed.Plugins.Toolbox.csproj",
+      "description": "Offline UUID, timestamp, Base64, URL, hash, and JSON utilities.",
+      "minWeedVersion": "0.1.6",
+      "trusted": true,
+      "tags": ["utility", "developer", "offline"],
+      "fetchModels": false,
+      "requiredFiles": []
+    }
+  ]
+}

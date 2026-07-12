@@ -38,6 +38,25 @@ dotnet run --project Weed.App\Weed.App.csproj
 
 External plugins share the Weed process. Permission fields communicate required capabilities but do not form a security sandbox.
 
+## Plugin Releases
+
+Toolbox and OCR use independent versions and GitHub Releases without replacing the main Weed `Latest` release. Package either plugin locally with the shared packager:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\package-plugin.ps1 `
+  -PluginId weed.toolbox
+```
+
+From a clean, pushed branch, create a plugin tag and GitHub Release with:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\release-plugin-github.ps1 `
+  -PluginId weed.toolbox `
+  -Version 0.1.1
+```
+
+The manual GitHub Actions workflow performs the same release and opens a pull request that updates the stable plugin registry. See [External Plugin Development](08-external-plugins.md#first-party-external-plugin-releases) for the asset, tag, checksum, and rollback rules.
+
 ## Release
 
 The root release script handles the normal release flow:

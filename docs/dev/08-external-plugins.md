@@ -167,6 +167,31 @@ Generate a checksum with:
 
 Never ship developer-machine paths, secrets, caches, temporary model downloads, or unnecessary SDK assemblies.
 
+## First-Party External Plugin Releases
+
+Toolbox and OCR are maintained in this repository but versioned independently from the Weed application. Application tags use `v<version>`; plugin tags use `toolbox-v<version>` and `ocr-v<version>`. Plugin releases must use `--latest=false` so the latest Weed application release remains authoritative.
+
+Every stable plugin release contains:
+
+```text
+<plugin-id>-<version>-win-x64.zip
+<plugin-id>-<version>-win-x64.sha256
+<plugin-id>-<version>.plugin-release.json
+```
+
+[`scripts/plugin-release.config.json`](../../scripts/plugin-release.config.json) is the release descriptor for both plugins. [`scripts/package-plugin.ps1`](../../scripts/package-plugin.ps1) publishes the project, validates the package layout and required files, and generates all three assets. OCR packages always download the pinned model set and verify every model SHA256 before creating the ZIP.
+
+[`plugins.registry.json`](../../plugins.registry.json) contains only the newest stable version of each published plugin. Package URLs are immutable GitHub Release asset URLs. Publish assets before updating the registry, and never replace an asset for an existing version; publish a patch version or roll the registry back to the previous known-good entry instead.
+
+The `Release external plugin` GitHub Actions workflow creates the tag and non-latest release, then opens a registry update pull request. Preview releases do not update the stable registry. The local equivalent is:
+
+```powershell
+powershell -ExecutionPolicy Bypass `
+  -File scripts\release-plugin-github.ps1 `
+  -PluginId weed.ocr `
+  -Version 0.1.0
+```
+
 ## OCR External Plugin
 
 `External Plugins\Weed.Plugins.Ocr` is the repository's external plugin example. `Weed.App` does not reference it. The plugin uses RapidOCRLib and PP-OCRv5 Chinese models.
@@ -177,12 +202,11 @@ Build the source:
 dotnet build "External Plugins\Weed.Plugins.Ocr\Weed.Plugins.Ocr.csproj"
 ```
 
-Create an importable package with models and runtime dependencies:
+Create an importable package with pinned models and runtime dependencies:
 
 ```powershell
 powershell -ExecutionPolicy Bypass `
-  -File scripts\package-ocr-plugin.ps1 `
-  -FetchModels
+  -File scripts\package-ocr-plugin.ps1
 ```
 
 Output:
@@ -191,6 +215,7 @@ Output:
 artifacts\plugins\weed.ocr\
 artifacts\plugins\weed.ocr.zip
 artifacts\plugins\weed.ocr-0.1.0-win-x64.zip
+artifacts\plugins\weed.ocr-0.1.0-win-x64.sha256
 artifacts\plugins\weed.ocr-0.1.0.plugin-release.json
 ```
 

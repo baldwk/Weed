@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -134,6 +135,12 @@ public sealed class ExternalPluginRegistryService
                     false,
                     $"Downloaded plugin hash did not match the registry. Expected {entry.Sha256}, got {sha256}.",
                     entry.Id);
+            }
+
+            var packageValidation = ValidateDownloadedPackage(downloadPath, entry);
+            if (packageValidation is not null)
+            {
+                return new PluginImportResult(false, packageValidation, entry.Id);
             }
 
             return await new ExternalPluginImporter().ImportAsync(
@@ -306,6 +313,48 @@ public sealed class ExternalPluginRegistryService
         return null;
     }
 
+    private static string? ValidateDownloadedPackage(string packagePath, ExternalPluginRegistryEntry entry)
+    {
+        try
+        {
+            using var archive = ZipFile.OpenRead(packagePath);
+            var manifestEntry = archive.GetEntry("manifest.json");
+            if (manifestEntry is null)
+            {
+                return "Registry packages must contain manifest.json at the ZIP root.";
+            }
+
+            using var stream = manifestEntry.Open();
+            var manifest = JsonSerializer.Deserialize<WeedPluginManifest>(stream, JsonOptions);
+            if (manifest is null)
+            {
+                return "Downloaded plugin manifest is empty.";
+            }
+
+            if (!manifest.Id.Equals(entry.Id, StringComparison.OrdinalIgnoreCase))
+            {
+                return $"Downloaded package id {manifest.Id} does not match registry id {entry.Id}.";
+            }
+
+            if (!manifest.Version.Equals(entry.Version, StringComparison.OrdinalIgnoreCase))
+            {
+                return $"Downloaded package version {manifest.Version} does not match registry version {entry.Version}.";
+            }
+
+            if (!string.IsNullOrWhiteSpace(entry.SdkVersion) &&
+                !manifest.SdkVersion.Equals(entry.SdkVersion, StringComparison.OrdinalIgnoreCase))
+            {
+                return $"Downloaded package SDK {manifest.SdkVersion} does not match registry SDK {entry.SdkVersion}.";
+            }
+
+            return null;
+        }
+        catch (Exception ex)
+        {
+            return $"Downloaded plugin package could not be validated: {ex.Message}";
+        }
+    }
+
     private async Task<string> ReadTextAsync(string location, CancellationToken cancellationToken)
     {
         if (Uri.TryCreate(location, UriKind.Absolute, out var uri) &&
@@ -379,6 +428,12 @@ public sealed class ExternalPluginRegistryService
 
     private static bool IsIgnoredPluginPath(string pluginsDirectory, string manifestPath)
     {
+        var pluginDirectory = Path.GetDirectoryName(manifestPath);
+        if (pluginDirectory is not null && ExternalPluginUninstaller.IsPendingRemoval(pluginDirectory))
+        {
+            return true;
+        }
+
         var relative = Path.GetRelativePath(pluginsDirectory, manifestPath);
         var parts = relative.Split(
             [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],

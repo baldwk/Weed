@@ -1,9 +1,11 @@
 # Changelog
 
-## Pre-release
+## 0.1.7
 
 - Added the Toolbox external plugin with configurable implicit commands for UUID generation, timestamp conversion, Base64, URL encoding, hashes, and JSON formatting.
 - Restyled the external plugin list and added confirmed uninstall with restart-safe cleanup for loaded packages.
+- Added a stable external plugin catalog with checksum-verified install and update actions, seeded with the Toolbox release.
+- Unified Toolbox and OCR packaging, pinned OCR model checksums, and added plugin-specific GitHub release and registry automation.
 
 ## 0.1.6
 
