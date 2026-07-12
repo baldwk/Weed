@@ -1,21 +1,21 @@
-# First-party Plugins
+# 第一方插件规格
+
+> [返回开发文档索引](README.md)
 
 ## 概览
 
-MVP 第一方插件：
+当前第一方插件：
 
 - AppLauncher
 - Calculator
 - Clipboard
 - Screenshot
-
-第一方插件随 Weed 发布，默认启用，使用同一套 manifest、生命周期和结果模型。
-
-当前仓库还包含以下第一方扩展插件：
-
 - Emoji Search
 - Translator
 - File Search
+- Run Command
+
+第一方插件随 Weed 发布，默认启用，使用同一套 manifest、生命周期和结果模型。
 
 ## AppLauncher
 
@@ -30,7 +30,7 @@ MVP 第一方插件：
 
 ### 范围
 
-MVP 索引 Windows 开始菜单中的应用快捷方式。
+AppLauncher 索引 Windows 开始菜单快捷方式与 `shell:AppsFolder` 中的应用。
 
 索引路径：
 
@@ -133,13 +133,14 @@ sqrt(9)
 
 ### 计算能力
 
-MVP 支持：
+当前支持：
 
 - 加减乘除。
 - 括号。
 - 幂运算。
 - 百分号。
 - 常用函数：`sqrt`、`abs`、`sin`、`cos`、`tan`、`round`。
+- 对数函数：`ln`、`log` 和 `logN`。
 - 常量：`pi`、`e`。
 
 计算逻辑通过 `ICalculatorEngine` 适配器封装，便于替换表达式引擎。
@@ -518,3 +519,15 @@ file path:projects weed
 - 复制路径。
 
 默认动作是打开选中项。
+
+## Run Command
+
+Run Command 是 implicit query 插件，用于启动白名单中的常用 Windows 系统工具，不执行任意用户输入。
+
+### 查询
+
+插件按命令别名与显示名称进行精确、前缀和包含匹配，最多返回 8 条结果。当前命令表包括 `cmd`、`regedit`、`taskmgr`、`services.msc`、`devmgmt.msc`、`diskmgmt.msc`、`control`、`appwiz.cpl`、`ncpa.cpl`、`sysdm.cpl`、`mstsc`、`notepad`、`calc` 和 `explorer`。
+
+### 动作
+
+默认且唯一的结果动作是通过 Shell 打开对应系统命令。

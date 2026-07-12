@@ -1,14 +1,16 @@
-# Plugin System
+# 插件系统
+
+> [返回开发文档索引](README.md)
 
 ## 插件类型
 
-MVP 插件入口是 managed .NET DLL。插件通过 `Weed.Abstractions` 中的接口与 Host 通信。
+Weed 插件入口是 managed .NET DLL。插件通过 `Weed.Abstractions` 中的接口与 Host 通信。
 
 推荐目标框架：
 
-- `Weed.Abstractions`: `net10.0`
-- Weed Host 和第一方 Windows 插件：`net10.0-windows`
-- 第三方插件：根据是否使用 Windows API 选择 `net10.0` 或 `net10.0-windows`
+- `Weed.Abstractions`: `net9.0`
+- Weed Host 和第一方 Windows 插件：`net9.0-windows`
+- 第三方插件：根据是否使用 Windows API 选择 `net9.0` 或 `net9.0-windows`
 
 插件入口类型必须是 public class，并实现 `IWeedPlugin`。插件可携带托管依赖和运行时资源。
 
@@ -251,7 +253,7 @@ network
 
 ## 开发者体验
 
-MVP 提供：
+当前仓库提供：
 
 - C# 插件模板。
 - manifest schema。

@@ -1,4 +1,6 @@
-# Query Routing And Hotkeys
+# 查询路由与快捷键
+
+> [返回开发文档索引](README.md)
 
 ## 查询入口
 
@@ -87,7 +89,7 @@ User input
   -> Render merged list
 ```
 
-MVP 第一方 implicit 插件：
+当前第一方 implicit 插件：
 
 - AppLauncher
 - Calculator

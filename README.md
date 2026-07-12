@@ -1,87 +1,80 @@
-# Weed MVP
+# Weed
 
-Weed is an Alfred-style launcher and workflow tool for Windows. This repository contains a runnable MVP based on the specification in `docs/`.
+Weed 是一款面向 Windows 的快捷启动器与效率工具。按下 `Alt+Space`，即可在一个统一入口中启动应用、计算表达式、搜索剪切板、翻译文本、查找文件或发起截图。
 
-## Run
+## 功能亮点
 
-```powershell
-dotnet run --project Weed.App\Weed.App.csproj
-```
+- **应用启动**：按名称、拼音、拼音首字母或英文缩写查找应用，并支持管理员运行、打开位置和复制路径。
+- **即时计算**：直接输入数学表达式，支持常用运算、函数、常量、阶乘、百分比与不同底数的对数。
+- **剪切板历史**：保存并搜索文本、图片、文件列表、HTML 和 RTF，支持置顶、删除、复制与直接粘贴。
+- **截图与标注**：支持区域截图、主屏截图和滚动长截图，并可使用画笔、矩形、椭圆等工具标注。
+- **快捷翻译**：通过 Google Translate 或百度翻译快速翻译文本，可设置默认语言与代理。
+- **文件搜索**：调用 Everything 的本地索引，快速查找文件和文件夹。
+- **Emoji 搜索**：按名称、别名、分类或 shortcode 搜索并复制 emoji。
+- **系统命令**：快速打开任务管理器、注册表、服务、控制面板等常用 Windows 工具。
+- **可扩展插件**：支持从 ZIP、DLL、已编译目录或源码目录导入外部插件。
 
-The app opens the launcher window on startup and also creates a tray icon. Search examples:
+## 界面预览
 
-- `1+2*3` returns a calculator result.
-- `sqrt(9)` returns `3`.
-- Type part of an installed Start Menu app name to launch it.
-- `clip keyword` searches captured clipboard text.
-- `shot` opens screenshot actions.
-
-## Screenshots
-
-| App Launcher | Calculator |
+| 应用启动 | 计算器 |
 | --- | --- |
-| <img src="screenshots/01-app-launcher.png" alt="App Launcher query result" width="420"> | <img src="screenshots/02-calculator.png" alt="Calculator query result" width="420"> |
-| Clipboard History | Translator |
-| <img src="screenshots/03-clipboard-history.png" alt="Clipboard history with image preview" width="420"> | <img src="screenshots/04-translator.png" alt="Translator query result" width="420"> |
-| Run Command | Emoji Search |
-| <img src="screenshots/05-run-command.png" alt="Run Command query result" width="420"> | <img src="screenshots/06-emoji-search.png" alt="Emoji Search query result" width="420"> |
-| OCR Result | Screenshot Actions |
-| <img src="screenshots/07-ocr-result.png" alt="OCR result preview" width="420"> | <img src="screenshots/08-screenshot-actions.png" alt="Screenshot action list" width="420"> |
-| Hotkeys Preferences | Plugin Settings |
-| <img src="screenshots/09-preferences-hotkeys.png" alt="Hotkeys preferences" width="420"> | <img src="screenshots/10-plugin-settings.png" alt="Screenshot plugin settings" width="420"> |
+| <img src="screenshots/01-app-launcher.png" alt="应用启动搜索结果" width="420"> | <img src="screenshots/02-calculator.png" alt="计算器结果" width="420"> |
+| 剪切板历史 | 翻译 |
+| <img src="screenshots/03-clipboard-history.png" alt="剪切板历史与图片预览" width="420"> | <img src="screenshots/04-translator.png" alt="翻译结果" width="420"> |
+| OCR | 截图操作 |
+| <img src="screenshots/07-ocr-result.png" alt="OCR 识别结果" width="420"> | <img src="screenshots/08-screenshot-actions.png" alt="截图操作列表" width="420"> |
+| 快捷键设置 | 插件设置 |
+| <img src="screenshots/09-preferences-hotkeys.png" alt="快捷键设置" width="420"> | <img src="screenshots/10-plugin-settings.png" alt="插件设置" width="420"> |
 
-## Current Scope
+## 安装
 
-- WPF host application with Alfred-style centered search window.
-- Built-in plugin source projects live under `Built-In Plugins`; external plugin examples live under `External Plugins`.
-- Built-in plugin features are documented in [Built-In Plugins/README.md](Built-In%20Plugins/README.md).
-- Settings files under `%APPDATA%\Weed`.
-- Logs under `%LOCALAPPDATA%\Weed\logs`.
-- SQLite database at `%LOCALAPPDATA%\Weed\weed.db` for usage history and migrations.
-- Built-in plugin runtime and external manifest scanning from `%LOCALAPPDATA%\Weed\plugins`.
-- External plugin UI imports ZIP packages, DLLs, compiled folders, and source folders into `%LOCALAPPDATA%\Weed\plugins`.
-- Query routing for Keyword, Hotkey, and ImplicitQuery.
-- Ranking with plugin match score, usage score, and plugin priority.
-- Built-in AppLauncher, Calculator, Clipboard, Screenshot, Run Command, Emoji Search, Translator, and File Search plugins.
-- AppLauncher indexes Start Menu shortcuts, persists a SQLite cache, filters uninstall/maintenance shortcuts by default, resolves `.lnk` target metadata, supports name/acronym/pinyin/pinyin-initial matching, extracts app icons into cache, and exposes open, run as administrator, open location, copy path, and manual refresh actions.
-- Clipboard uses a native clipboard listener with polling fallback, captures text, images, file lists, RTF summaries, and HTML summaries; metadata and FTS search live in SQLite, pinyin/type filters are supported, and image/rich objects are cleaned up by retention and object quota settings.
-- Screenshot capture supports region, primary-screen, and scrolling-area capture with a stoppable progress window. Region capture stays in the screenshot overlay with a size hint and magnifier, then uses a bottom toolbar for pen, rectangle, ellipse, color, line width, undo, redo, clear, copy, and PNG/JPEG save controls.
-- Emoji Search supports the `emoji` keyword over built-in emoji names, aliases, categories, and shortcodes.
-- Translator supports `tr` and `translate` keywords, Google Translate and Baidu Translate (百度翻译), configurable default languages, query delay, and proxy modes.
-- File Search supports the `file` keyword through the Everything SDK and Everything's local index, including configurable SDK sort order; Weed does not build its own full-disk file index.
-- OCR is available as a packaged external plugin using RapidOCRLib and PP-OCRv5 Chinese models; it is not referenced by `Weed.App`.
-- Settings use a sidebar layout and include launch-at-startup, hotkey editing, plugin enablement, implicit-query plugin priority, plugin-owned settings, and plugin details with manifest and log diagnostics.
-- The app ships a native application icon, tray icon, and first-party plugin icons.
-- Host logs startup, shutdown, plugin loading, command errors, and unhandled exceptions.
-- Update checks can read an HTTP or local manifest, compare versions, verify package SHA256, and download packages under `%LOCALAPPDATA%\Weed\updates`.
-- Release scripts under `scripts/` can publish, create a ZIP package and update manifest, install for the current user, and uninstall while preserving user data.
+1. 前往 [Releases](https://github.com/baldwk/Weed/releases/latest) 下载 `Weed-win-x64.zip`。
+2. 安装 [.NET 9 Desktop Runtime x64](https://dotnet.microsoft.com/download/dotnet/9.0)，如系统中已经安装可跳过。
+3. 将压缩包完整解压到固定目录，然后运行 `Weed.App.exe`。
 
-## Publish And Install
+Weed 当前支持 Windows 10 及以上 64 位系统。首次运行后会显示启动器并创建托盘图标；重复启动会唤起已经运行的 Weed。
 
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\publish-release.ps1
-powershell -ExecutionPolicy Bypass -File scripts\install-current-user.ps1
-```
+> Weed 尚未提供安装程序，也未进行代码签名。请从本仓库 Release 页面下载，并在解压后运行。
 
-`publish-release.ps1` emits:
+## 快速上手
 
-- `artifacts\Weed-win-x64\` runnable app folder.
-- `artifacts\Weed-win-x64.zip` release package.
-- `artifacts\Weed-win-x64.update.json` update manifest with version, package URL, and SHA256.
-- `docs\`, `schemas\`, and `templates\` inside the app folder for plugin development.
+按 `Alt+Space` 唤起 Weed，输入内容后使用方向键选择结果，按 `Enter` 执行默认操作。结果提供更多操作时，可按界面提示选择打开、复制、粘贴、定位或删除等动作。
 
-Set the manifest path or URL in Settings > Updates to check and download updates. Relative `packageUrl` values are resolved next to the manifest.
+| 输入 | 用途 |
+| --- | --- |
+| `vscode`、`wx` | 按名称、拼音或缩写启动应用 |
+| `1+2*3`、`ln(e)`、`log2(8)` | 计算表达式 |
+| `clip meeting` | 搜索剪切板历史 |
+| `clip type:image` | 只查看剪切板图片 |
+| `shot` | 打开截图操作 |
+| `tr hello` | 使用默认语言设置翻译文本 |
+| `tr en zh-CN hello` | 指定源语言和目标语言 |
+| `emoji rocket` | 搜索 emoji |
+| `file report.pdf` | 通过 Everything 搜索文件 |
+| `taskmgr` | 打开任务管理器 |
 
-Uninstall app files and the Start Menu shortcut:
+默认快捷键：
 
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\uninstall-current-user.ps1
-```
+- `Alt+Space`：唤起 Weed。
+- `Shift+Ctrl+C`：打开剪切板历史。
+- `Shift+Alt+A`：开始区域截图。
+- `Shift+Alt+O`：安装 OCR 外部插件后，截图并识别文字。
 
-Plugin SDK contracts live in `Weed.Abstractions`. A manifest schema and C# plugin template are included in the published app folder.
+快捷键、主题、开机启动、插件启用状态和插件参数均可在设置中修改。
 
-## External Plugin Distribution
+## 插件
 
-External plugins should live in independent repositories and publish ZIP packages through GitHub Releases, or be imported directly from a local DLL or source folder. A packaged ZIP root should contain `manifest.json`, the plugin DLL, `.deps.json`, and dependencies. Weed copies imports into `%LOCALAPPDATA%\Weed\plugins\<plugin-id>` from Settings > External Plugins.
+Weed 内置 App Launcher、Calculator、Clipboard、Screenshot、Emoji Search、Translator、File Search 和 Run Command。完整用法见[内置插件指南](Built-In%20Plugins/README.md)。
 
-The implementation targets `net9.0` / `net9.0-windows` because that is the installed SDK on this machine. The spec names .NET 10 LTS; upgrading is a project-file change once the SDK is installed.
+仓库中还包含可单独打包导入的 OCR 外部插件，使用方法见 [OCR 插件说明](External%20Plugins/Weed.Plugins.Ocr/README.md)。外部插件会在 Weed 进程内运行，请只导入来源可信的插件。
+
+## 使用文档
+
+- [使用指南](docs/user-guide.md)：日常操作、设置、更新、数据位置与故障排查。
+- [内置插件指南](Built-In%20Plugins/README.md)：每个内置插件的入口、操作和设置。
+- [文档索引](docs/README.md)：用户文档与开发文档总览。
+- [开发文档](docs/dev/README.md)：构建、架构、插件 SDK 与发布流程。
+
+## 许可证
+
+本仓库目前未包含开源许可证。除非仓库后续明确添加许可证，否则默认保留所有权利。

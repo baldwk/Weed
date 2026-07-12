@@ -1,4 +1,6 @@
-# System Architecture
+# 系统架构
+
+> [返回开发文档索引](README.md)
 
 ## 总体结构
 
@@ -19,7 +21,7 @@ Weed.Platform.Windows
   全局热键、Win32 interop、Shell 启动、剪切板、截屏、窗口服务
 
 First-party Plugins
-  AppLauncher、Calculator、Clipboard、Screenshot
+  AppLauncher、Calculator、Clipboard、Screenshot、Emoji、Translator、FileSearch、RunCommand
 ```
 
 ## 项目职责
@@ -45,7 +47,7 @@ First-party Plugins
 
 - 扫描插件目录和 manifest。
 - 校验 manifest、SDK 版本和入口类型。
-- 为每个插件创建独立 `AssemblyLoadContext`。
+- 为每个外部插件创建独立 `AssemblyLoadContext`。
 - 启动、停止和卸载插件。
 - 捕获插件异常并记录诊断信息。
 - 将 Host 服务以受控接口传给插件。
@@ -122,10 +124,10 @@ Built-in defaults
 默认插件目录：
 
 ```text
-%LOCALAPPDATA%\Weed\Plugins
+%LOCALAPPDATA%\Weed\plugins
 ```
 
-第一方插件随安装包分发，可安装到应用目录或用户插件目录。用户安装的第三方插件位于用户插件目录。
+第一方插件由 `Weed.App` 直接引用并随应用发布。用户安装的外部插件位于用户插件目录，并在下次启动时扫描加载。
 
 ## 日志和诊断
 

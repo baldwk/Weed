@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.5
+
+- Reworked the main README around product capabilities, installation, everyday usage, screenshots, and user-facing plugin discovery.
+- Added a dedicated user guide covering settings, updates, local data, privacy boundaries, external plugins, and troubleshooting.
+- Moved architecture, implementation, plugin SDK, storage, roadmap, and release guidance into `docs/dev` with a new developer index and corrected .NET 9 requirements.
+- Reorganized the built-in plugin, OCR plugin, and plugin template documentation, including current calculator logarithm support and external dependency guidance.
+
 ## 0.1.4
 
 - Prevented multiple Weed processes from running and made repeated launches activate the existing launcher instead.

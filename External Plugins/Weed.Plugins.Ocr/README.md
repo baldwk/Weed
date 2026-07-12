@@ -1,34 +1,40 @@
-# Weed OCR External Plugin
+# Weed OCR 外部插件
 
-This plugin uses RapidOCRLib with PP-OCRv5 mobile Chinese models. It is intentionally packaged as an external plugin,
-not referenced by `Weed.App`.
+OCR 插件用于识别屏幕区域或本地图片中的文字。它使用 PP-OCRv5 中文模型，支持中文、英文、数字及常见混排内容。
 
-## Build
+该插件不会随 Weed 主程序自动安装。请获取包含运行依赖与四个模型文件的完整插件 ZIP，然后在 **Settings > External Plugins** 中导入并重启 Weed。仓库维护者或插件开发者可按[外部插件开发文档](../../docs/dev/08-external-plugins.md#ocr-external-plugin)生成安装包。
 
-```powershell
-dotnet build "External Plugins\Weed.Plugins.Ocr\Weed.Plugins.Ocr.csproj"
-```
+## 使用方式
 
-## Download models
+| 输入或快捷键 | 用途 |
+| --- | --- |
+| `ocr` | 显示截图识别和图片识别入口 |
+| `ocr "C:\path\image.png"` | 识别指定图片文件 |
+| `Shift+Alt+O` | 选择屏幕区域并识别文字 |
 
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\fetch-ocr-models.ps1
-```
+支持 PNG、JPEG、BMP、TIFF 和 WebP 图片。图片路径包含空格时，请使用双引号包裹。
 
-The four model files are placed under `External Plugins\Weed.Plugins.Ocr\models`. The model set is about 21 MiB.
+识别完成后，默认操作会把文字复制到剪切板。还可以打开原图、打开原图所在目录，或将识别结果保存为文本文件后打开。
 
-## Package
+## 设置
 
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\package-ocr-plugin.ps1 -FetchModels
-```
+- **Model directory**：模型目录。留空时使用插件包内的 `models` 目录。
+- **Max side length**：识别时的最大边长。提高数值有助于识别小字，但速度会变慢并占用更多内存。
+- **Padding**：文字检测前添加的图像边距。
+- **Angle detection**：识别并纠正旋转文字，默认开启。
 
-The script writes both `artifacts\plugins\weed.ocr.zip` and the registry-friendly
-`artifacts\plugins\weed.ocr-0.1.0-win-x64.zip`, plus `weed.ocr-0.1.0.plugin-release.json`.
-Import the ZIP from Weed Settings > External Plugins, or extract it to
-`%LOCALAPPDATA%\Weed\plugins\weed.ocr` and restart Weed.
+通常无需修改这些设置。如果插件提示模型缺失，请重新导入包含完整 `models` 目录的插件包，或在 Model directory 中选择有效模型目录。
 
-`-FetchModels` downloads the models into the packaged plugin folder, not into source control.
+## 隐私说明
 
-The default OCR result action copies recognized text to the clipboard. Opening a text file remains available as a
-secondary action.
+OCR 识别在本机完成，不会把图片发送到在线识别服务。区域截图与生成的文本可能保存在 `%LOCALAPPDATA%\Weed\plugins-data\weed.ocr`，请根据内容敏感程度自行清理。
+
+外部插件与 Weed 在同一进程中运行。请只导入来源可信的安装包。
+
+## 故障排查
+
+- **导入后找不到 OCR**：重启 Weed，并确认插件已在 **Settings > Plugins** 中启用。
+- **提示模型文件缺失**：检查插件目录或设置中的模型目录是否包含完整的 PP-OCRv5 模型。
+- **截图快捷键无效**：检查 `Shift+Alt+O` 是否被其他程序占用，可在 Weed 快捷键设置中修改。
+- **小字识别不完整**：适当提高 Max side length，并使用边界清晰、缩放较少的原图。
+- **加载或识别失败**：在插件详情中查看最近日志，确认导入的是完整发布包而不是单独的 DLL。

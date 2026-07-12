@@ -1,21 +1,20 @@
-# Weed Specification Index
+# Weed 文档
 
-Weed is an Alfred-style launcher and workflow tool for Windows. These documents describe the MVP product scope,
-system design, plugin model, and development roadmap.
+文档按读者分为使用文档和开发文档。第一次使用 Weed，请从根目录 [README](../README.md) 和[使用指南](user-guide.md)开始。
 
-## Documents
+## 使用文档
 
-- [00-overview.md](00-overview.md): product positioning, MVP scope, design principles, and terminology.
-- [01-system-architecture.md](01-system-architecture.md): Host, Core, PluginHost, platform layer, and first-party plugin responsibilities.
-- [02-plugin-system.md](02-plugin-system.md): managed DLL plugin contract, manifest, lifecycle, permissions, packaging, and compatibility.
-- [03-query-routing-hotkeys.md](03-query-routing-hotkeys.md): Keyword, Hotkey, ImplicitQuery, ranking, usage history, and shortcut settings.
-- [04-ui-ux.md](04-ui-ux.md): launcher UI, plugin panels, settings, keyboard interaction, and theme rules.
-- [05-first-party-plugins.md](05-first-party-plugins.md): first-party plugin specs and extension plugin specs.
-- [06-data-storage.md](06-data-storage.md): settings, history, indexes, clipboard objects, and plugin data storage.
-- [07-roadmap.md](07-roadmap.md): implementation phases, acceptance checks, and release preparation.
-- [08-external-plugins.md](08-external-plugins.md): external plugin development, packaging, import design, and OCR plugin example.
+- [使用指南](user-guide.md)：安装、唤起、搜索、设置、更新、数据位置与常见问题。
+- [内置插件指南](../Built-In%20Plugins/README.md)：内置插件的入口、功能、动作和设置。
+- [OCR 插件说明](../External%20Plugins/Weed.Plugins.Ocr/README.md)：OCR 插件的安装与使用。
+- [更新记录](../CHANGELOG.md)：各版本的新增功能与修复。
 
-## Status
+## 开发文档
 
-These documents are the MVP-stage product and technical specs. When APIs, data structures, or interactions change,
-update the corresponding spec in the same change.
+技术实现、构建、插件开发和发布指引统一位于 [`docs/dev`](dev/README.md)，不会混入面向用户的 README 与使用说明。
+
+- [开发文档索引](dev/README.md)
+- [外部插件开发](dev/08-external-plugins.md)
+- [插件模板](../templates/plugin/README.md)
+
+文档描述与当前发布版本不一致时，请提交 Issue，并注明 Weed 版本与对应页面。
