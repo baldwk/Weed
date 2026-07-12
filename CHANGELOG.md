@@ -1,5 +1,9 @@
 # Changelog
 
+## Pre-release
+
+- Fixed plugin release existence checks under Windows PowerShell when the target GitHub release does not exist yet.
+
 ## 0.1.7
 
 - Added the Toolbox external plugin with configurable implicit commands for UUID generation, timestamp conversion, Base64, URL encoding, hashes, and JSON formatting.

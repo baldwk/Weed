@@ -81,8 +81,17 @@ try {
         throw "Remote tag already exists: $tag"
     }
 
-    & gh release view $tag --json tagName 1>$null 2>$null
-    if ($LASTEXITCODE -eq 0) {
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "Continue"
+        & gh release view $tag --json tagName 1>$null 2>$null
+        $releaseExists = $LASTEXITCODE -eq 0
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+
+    if ($releaseExists) {
         throw "GitHub release already exists: $tag"
     }
 
