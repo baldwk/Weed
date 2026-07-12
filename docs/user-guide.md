@@ -50,11 +50,11 @@ File Search depends on [Everything](https://www.voidtools.com/) for the local fi
 
 ## External Plugins
 
-Open **Settings > External Plugins**, choose a plugin ZIP, DLL, published folder, or source folder, then restart Weed after import.
+Open **Settings > External Plugins**, choose a plugin ZIP, DLL, published folder, or source folder, then restart Weed after import. To uninstall a package, select it in the installed list, choose **Uninstall**, confirm the removal, and restart Weed. Plugin settings and data are preserved so reinstalling the same plugin can reuse them.
 
 External plugins are not sandboxed. They run inside the Weed process and may access the screen, clipboard, files, or network according to their declared capabilities. Install only trusted plugins with a clear source and version.
 
-The OCR plugin needs model files and native runtime dependencies. See the [OCR Plugin Guide](../External%20Plugins/Weed.Plugins.Ocr/README.md).
+The OCR plugin needs model files and native runtime dependencies. The Toolbox plugin provides local UUID, timestamp, encoding, hashing, and JSON utilities. See the [OCR Plugin Guide](../External%20Plugins/Weed.Plugins.Ocr/README.md) and [Toolbox Plugin Guide](../External%20Plugins/Weed.Plugins.Toolbox/README.md).
 
 ## Updates
 

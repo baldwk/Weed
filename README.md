@@ -66,7 +66,7 @@ Hotkeys, theme, launch at startup, plugin state, and plugin-specific options are
 
 Weed includes App Launcher, Calculator, Clipboard, Screenshot, Emoji Search, Translator, File Search, and Run Command. See the [built-in plugin guide](Built-In%20Plugins/README.md) for complete usage details.
 
-The repository also contains an OCR external plugin that can be packaged and imported separately. See the [OCR plugin guide](External%20Plugins/Weed.Plugins.Ocr/README.md). External plugins run inside the Weed process, so install only plugins you trust.
+The repository also contains external OCR and Toolbox plugins that can be packaged and imported separately. See the [OCR plugin guide](External%20Plugins/Weed.Plugins.Ocr/README.md) and [Toolbox plugin guide](External%20Plugins/Weed.Plugins.Toolbox/README.md). External plugins run inside the Weed process, so install only plugins you trust.
 
 ## Documentation
 

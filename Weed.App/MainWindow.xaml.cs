@@ -14,6 +14,7 @@ using Weed.Abstractions;
 using Weed.Core;
 using Weed.PluginHost;
 using Weed.Platform.Windows;
+using WpfBinding = System.Windows.Data.Binding;
 
 namespace Weed.App;
 
@@ -1038,7 +1039,9 @@ public sealed class SettingsWindow : Window
 
         public bool IsLoaded { get; init; }
 
-        public string Display => $"{Manifest.Name} {Manifest.Version} - {(IsLoaded ? "Loaded" : "Restart required")}";
+        public string VersionText => $"v{Manifest.Version}";
+
+        public string StatusText => IsLoaded ? "Loaded in this session" : "Installed - restart required";
     }
 
     private UIElement BuildContent(string? selectedNavId = null)
@@ -1849,6 +1852,100 @@ public sealed class SettingsWindow : Window
         return $"{value:0.#} {units[unit]}";
     }
 
+    private DataTemplate ExternalPluginItemTemplate()
+    {
+        var root = new FrameworkElementFactory(typeof(StackPanel));
+        root.SetValue(FrameworkElement.MarginProperty, new Thickness(2));
+
+        var header = new FrameworkElementFactory(typeof(DockPanel));
+        header.SetValue(DockPanel.LastChildFillProperty, true);
+
+        var version = new FrameworkElementFactory(typeof(TextBlock));
+        version.SetBinding(TextBlock.TextProperty, new WpfBinding(nameof(ExternalPluginInstallViewItem.VersionText)));
+        version.SetValue(TextBlock.FontSizeProperty, 11.0);
+        version.SetValue(TextBlock.ForegroundProperty, ThemeManager.Resource("TextSecondaryBrush"));
+        version.SetValue(FrameworkElement.MarginProperty, new Thickness(12, 2, 0, 0));
+        version.SetValue(DockPanel.DockProperty, Dock.Right);
+        header.AppendChild(version);
+
+        var name = new FrameworkElementFactory(typeof(TextBlock));
+        name.SetBinding(TextBlock.TextProperty, new WpfBinding("Manifest.Name"));
+        name.SetValue(TextBlock.FontSizeProperty, 14.0);
+        name.SetValue(TextBlock.FontWeightProperty, FontWeights.SemiBold);
+        name.SetValue(TextBlock.ForegroundProperty, ThemeManager.Resource("TextPrimaryBrush"));
+        name.SetValue(TextBlock.TextTrimmingProperty, TextTrimming.CharacterEllipsis);
+        header.AppendChild(name);
+        root.AppendChild(header);
+
+        var status = new FrameworkElementFactory(typeof(TextBlock));
+        status.SetBinding(TextBlock.TextProperty, new WpfBinding(nameof(ExternalPluginInstallViewItem.StatusText)));
+        status.SetValue(TextBlock.FontSizeProperty, 12.0);
+        status.SetValue(TextBlock.ForegroundProperty, ThemeManager.Resource("TextSecondaryBrush"));
+        status.SetValue(FrameworkElement.MarginProperty, new Thickness(0, 4, 0, 0));
+        status.SetValue(TextBlock.TextTrimmingProperty, TextTrimming.CharacterEllipsis);
+        root.AppendChild(status);
+
+        return new DataTemplate(typeof(ExternalPluginInstallViewItem)) { VisualTree = root };
+    }
+
+    private Style ExternalPluginItemContainerStyle()
+    {
+        var style = new Style(typeof(System.Windows.Controls.ListBoxItem));
+        style.Setters.Add(new Setter(BackgroundProperty, System.Windows.Media.Brushes.Transparent));
+        style.Setters.Add(new Setter(BorderBrushProperty, System.Windows.Media.Brushes.Transparent));
+        style.Setters.Add(new Setter(BorderThicknessProperty, new Thickness(1)));
+        style.Setters.Add(new Setter(PaddingProperty, new Thickness(12, 10, 12, 10)));
+        style.Setters.Add(new Setter(MarginProperty, new Thickness(0, 0, 0, 4)));
+        style.Setters.Add(new Setter(HorizontalContentAlignmentProperty, System.Windows.HorizontalAlignment.Stretch));
+        style.Setters.Add(new Setter(FocusVisualStyleProperty, null));
+
+        var border = new FrameworkElementFactory(typeof(Border));
+        border.Name = "ItemBorder";
+        border.SetValue(Border.CornerRadiusProperty, new CornerRadius(6));
+        border.SetBinding(Border.BackgroundProperty, new WpfBinding(nameof(Background))
+        {
+            RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent)
+        });
+        border.SetBinding(Border.BorderBrushProperty, new WpfBinding(nameof(BorderBrush))
+        {
+            RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent)
+        });
+        border.SetBinding(Border.BorderThicknessProperty, new WpfBinding(nameof(BorderThickness))
+        {
+            RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent)
+        });
+        border.SetBinding(Border.PaddingProperty, new WpfBinding(nameof(Padding))
+        {
+            RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent)
+        });
+
+        var presenter = new FrameworkElementFactory(typeof(ContentPresenter));
+        presenter.SetValue(ContentPresenter.HorizontalAlignmentProperty, System.Windows.HorizontalAlignment.Stretch);
+        presenter.SetBinding(ContentPresenter.ContentProperty, new WpfBinding(nameof(ContentControl.Content))
+        {
+            RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent)
+        });
+        presenter.SetBinding(ContentPresenter.ContentTemplateProperty, new WpfBinding(nameof(ContentControl.ContentTemplate))
+        {
+            RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent)
+        });
+        border.AppendChild(presenter);
+
+        var template = new ControlTemplate(typeof(System.Windows.Controls.ListBoxItem)) { VisualTree = border };
+        style.Setters.Add(new Setter(TemplateProperty, template));
+
+        var hover = new Trigger { Property = IsMouseOverProperty, Value = true };
+        hover.Setters.Add(new Setter(BackgroundProperty, ThemeManager.Resource("HoverBrush")));
+        hover.Setters.Add(new Setter(BorderBrushProperty, ThemeManager.Resource("ControlBorderBrush")));
+        style.Triggers.Add(hover);
+
+        var selected = new Trigger { Property = System.Windows.Controls.ListBoxItem.IsSelectedProperty, Value = true };
+        selected.Setters.Add(new Setter(BackgroundProperty, ThemeManager.Resource("SelectedNavBrush")));
+        selected.Setters.Add(new Setter(BorderBrushProperty, ThemeManager.Resource("SelectedNavBorderBrush")));
+        style.Triggers.Add(selected);
+        return style;
+    }
+
     private UIElement BuildExternalPluginsTab()
     {
         var refreshInstalled = new System.Windows.Controls.Button
@@ -1868,6 +1965,18 @@ public sealed class SettingsWindow : Window
             FontSize = 13,
             VerticalContentAlignment = VerticalAlignment.Center
         };
+        var uninstallPlugin = new System.Windows.Controls.Button
+        {
+            Content = "Uninstall",
+            Padding = new Thickness(12, 6, 12, 6),
+            Margin = new Thickness(8, 0, 0, 0),
+            MinHeight = 34,
+            FontSize = 13,
+            IsEnabled = false,
+            Foreground = ThemeManager.Resource("DangerBrush"),
+            Background = ThemeManager.Resource("DangerSurfaceBrush"),
+            VerticalContentAlignment = VerticalAlignment.Center
+        };
         var installedActions = new StackPanel
         {
             Orientation = System.Windows.Controls.Orientation.Horizontal,
@@ -1875,12 +1984,15 @@ public sealed class SettingsWindow : Window
         };
         installedActions.Children.Add(refreshInstalled);
         installedActions.Children.Add(openFolder);
+        installedActions.Children.Add(uninstallPlugin);
 
         var installedList = new System.Windows.Controls.ListBox
         {
             Width = 420,
-            Height = 190,
-            DisplayMemberPath = nameof(ExternalPluginInstallViewItem.Display),
+            Height = 230,
+            Padding = new Thickness(4),
+            ItemTemplate = ExternalPluginItemTemplate(),
+            ItemContainerStyle = ExternalPluginItemContainerStyle(),
             Background = ThemeManager.Resource("ControlBrush"),
             BorderBrush = ThemeManager.Resource("ControlBorderBrush"),
             BorderThickness = new Thickness(1),
@@ -1935,6 +2047,7 @@ public sealed class SettingsWindow : Window
         {
             var items = ReadExternalPluginInstallations();
             installedList.ItemsSource = items;
+            uninstallPlugin.IsEnabled = false;
             if (items.Count == 0)
             {
                 installedStatus.Text = "No external plugins found in the local plugin folder.";
@@ -1945,6 +2058,7 @@ public sealed class SettingsWindow : Window
             if (installedList.SelectedItem is ExternalPluginInstallViewItem selected)
             {
                 installedStatus.Text = FormatExternalPluginInstallItem(selected);
+                uninstallPlugin.IsEnabled = true;
             }
         }
 
@@ -1953,6 +2067,11 @@ public sealed class SettingsWindow : Window
             if (installedList.SelectedItem is ExternalPluginInstallViewItem selected)
             {
                 installedStatus.Text = FormatExternalPluginInstallItem(selected);
+                uninstallPlugin.IsEnabled = true;
+            }
+            else
+            {
+                uninstallPlugin.IsEnabled = false;
             }
         };
 
@@ -1992,14 +2111,51 @@ public sealed class SettingsWindow : Window
             Process.Start(new ProcessStartInfo(_settings.Paths.Plugins) { UseShellExecute = true });
         };
 
+        uninstallPlugin.Click += async (_, _) =>
+        {
+            if (installedList.SelectedItem is not ExternalPluginInstallViewItem selected)
+            {
+                return;
+            }
+
+            var confirmation = System.Windows.MessageBox.Show(
+                this,
+                $"Uninstall {selected.Manifest.Name} v{selected.Manifest.Version}?{Environment.NewLine}{Environment.NewLine}" +
+                "The plugin package will be removed. Plugin settings and data are preserved. " +
+                "Restart Weed to unload a plugin that is active in this session.",
+                "Uninstall External Plugin",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning);
+            if (confirmation != MessageBoxResult.Yes)
+            {
+                return;
+            }
+
+            uninstallPlugin.IsEnabled = false;
+            installedStatus.Text = $"Uninstalling {selected.Manifest.Name}...";
+            var result = await new ExternalPluginUninstaller().UninstallAsync(
+                selected.Manifest.Id,
+                selected.Directory,
+                _settings.Paths.Plugins,
+                CancellationToken.None);
+            RefreshInstalled();
+            installedStatus.Text = result.Message;
+            System.Windows.MessageBox.Show(
+                this,
+                result.Message,
+                "External Plugin Uninstall",
+                MessageBoxButton.OK,
+                result.Succeeded ? MessageBoxImage.Information : MessageBoxImage.Warning);
+        };
+
         RefreshInstalled();
 
         return PageShell(
             "External Plugins",
-            "Import ZIP packages, plugin DLLs, or source folders into the user plugin directory. Restart Weed after import or replacement.",
+            "Import, inspect, or uninstall external plugin packages. Restart Weed after installation, replacement, or removal.",
             [
                 Section("Installed",
-                    SettingRow("Actions", "Refresh the local list or open the folder scanned at startup.", installedActions),
+                    SettingRow("Actions", "Refresh, open the plugin folder, or uninstall the selected package.", installedActions),
                     SettingRow("Plugins", "External plugins installed under the user plugin directory.", installedList),
                     SettingRow("Status", "Selected plugin and load state.", installedStatus)),
                 Section("Import",
@@ -2028,6 +2184,12 @@ public sealed class SettingsWindow : Window
 
             try
             {
+                var pluginDirectory = Path.GetDirectoryName(manifestPath) ?? _settings.Paths.Plugins;
+                if (ExternalPluginUninstaller.IsPendingRemoval(pluginDirectory))
+                {
+                    continue;
+                }
+
                 var manifest = JsonSerializer.Deserialize<WeedPluginManifest>(
                     File.ReadAllText(manifestPath),
                     new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
@@ -2039,7 +2201,7 @@ public sealed class SettingsWindow : Window
                 items.Add(new ExternalPluginInstallViewItem
                 {
                     Manifest = manifest,
-                    Directory = Path.GetDirectoryName(manifestPath) ?? _settings.Paths.Plugins,
+                    Directory = pluginDirectory,
                     IsLoaded = loaded.Contains(manifest.Id)
                 });
             }

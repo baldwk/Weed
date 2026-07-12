@@ -12,6 +12,7 @@ using Weed.Plugins.FileSearch;
 using Weed.Plugins.RunCommand;
 using Weed.Plugins.Screenshot;
 using Weed.Plugins.Translate;
+using Weed.Plugins.Toolbox;
 using IQueryProvider = Weed.Abstractions.IQueryProvider;
 
 var root = Path.Combine(Path.GetTempPath(), "WeedSmoke", Guid.NewGuid().ToString("N"));
@@ -40,7 +41,7 @@ var missingDependencyStatuses = await missingDependencyCoordinator.EnsureAsync([
 Require(!missingDependencyStatuses.Single().Available,
     "dependency coordinator should report a missing executable without blocking startup");
 var host = new SmokeHost(logger, settings);
-await VerifyExternalPluginImportAsync(root, paths);
+await VerifyExternalPluginImportAsync(root, paths, host, logger);
 
 var plugins = new List<LoadedPlugin>();
 var appLauncherPlugin = new AppLauncherPlugin();
@@ -57,6 +58,7 @@ var everythingClient = new SmokeEverythingSearchClient(
 var fileSearchPlugin = new FileSearchPlugin(everythingClient);
 var runCommandPlugin = new RunCommandPlugin();
 var screenshotPlugin = new ScreenshotPlugin();
+var toolboxPlugin = new ToolboxPlugin();
 await AddPluginAsync(AppLauncherPlugin.Manifest, appLauncherPlugin);
 await AddPluginAsync(CalculatorPlugin.Manifest, calculatorPlugin);
 await AddPluginAsync(ClipboardPlugin.Manifest, clipboardPlugin);
@@ -65,6 +67,7 @@ await AddPluginAsync(TranslatePlugin.Manifest, translatePlugin);
 await AddPluginAsync(FileSearchPlugin.Manifest, fileSearchPlugin);
 await AddPluginAsync(RunCommandPlugin.Manifest, runCommandPlugin);
 await AddPluginAsync(ScreenshotPlugin.Manifest, screenshotPlugin);
+await AddPluginAsync(ToolboxPlugin.Manifest, toolboxPlugin);
 
 settings.EnsurePluginDefaults(plugins.Select(p => p.Manifest));
 var usage = new UsageHistoryStore(paths.DatabaseFile);
@@ -75,6 +78,8 @@ settings.SetPluginSetting(TranslatePlugin.PluginId, "queryDelayMilliseconds", 0)
 
 var empty = await router.QueryAsync("", CancellationToken.None);
 Require(empty.Count == 0, "empty query should not show plugin startup results");
+
+await VerifyToolboxAsync(router, settings, host, logger);
 
 var calc = await router.QueryAsync("1+2*3", CancellationToken.None);
 Require(calc.Any(r => r.Result.Title.Contains("= 7", StringComparison.Ordinal)), "calculator 1+2*3 should equal 7");
@@ -695,7 +700,11 @@ static async Task VerifySingleInstanceAsync()
     await activation.Task.WaitAsync(TimeSpan.FromSeconds(3));
 }
 
-static async Task VerifyExternalPluginImportAsync(string root, AppPaths paths)
+static async Task VerifyExternalPluginImportAsync(
+    string root,
+    AppPaths paths,
+    SmokeHost host,
+    ConsoleWeedLogger logger)
 {
     var source = Path.Combine(root, "external-plugin-source");
     Directory.CreateDirectory(source);
@@ -845,6 +854,34 @@ static async Task VerifyExternalPluginImportAsync(string root, AppPaths paths)
     };
     var incompatiblePlans = registryService.BuildInstallPlans(incompatibleRegistry, paths.Plugins);
     Require(incompatiblePlans.Count == 1 && incompatiblePlans[0].State == ExternalPluginInstallState.Incompatible, "external plugin registry should detect incompatible plugin versions");
+
+    var uninstaller = new ExternalPluginUninstaller();
+    var outsideResult = await uninstaller.UninstallAsync(
+        "example.external",
+        source,
+        paths.Plugins,
+        CancellationToken.None);
+    Require(!outsideResult.Succeeded, "external plugin uninstall should reject directories outside the plugin root");
+
+    var uninstallResult = await uninstaller.UninstallAsync(
+        "example.external",
+        Path.Combine(paths.Plugins, "example.external"),
+        paths.Plugins,
+        CancellationToken.None);
+    Require(uninstallResult.Succeeded && uninstallResult.RestartRequired,
+        "external plugin uninstall should remove a validated installed package");
+    Require(!Directory.Exists(Path.Combine(paths.Plugins, "example.external")),
+        "external plugin uninstall should remove the installed plugin directory");
+
+    var pendingRoot = Path.Combine(root, "pending-uninstall-plugins");
+    var pendingPlugin = Path.Combine(pendingRoot, "pending.external");
+    Directory.CreateDirectory(pendingPlugin);
+    await File.WriteAllTextAsync(Path.Combine(pendingPlugin, ExternalPluginUninstaller.PendingRemovalMarker), "pending");
+    await using (var runtime = new PluginRuntime(host, logger))
+    {
+        await runtime.ScanDirectoryAsync(pendingRoot, CancellationToken.None);
+    }
+    Require(!Directory.Exists(pendingPlugin), "plugin startup should clean pending uninstall directories");
 }
 
 async Task AddPluginAsync(WeedPluginManifest manifest, IWeedPlugin plugin)
@@ -866,13 +903,152 @@ static void Require(bool condition, string message)
     }
 }
 
+static async Task VerifyToolboxAsync(
+    QueryRouter router,
+    SettingsRepository settings,
+    SmokeHost host,
+    ConsoleWeedLogger logger)
+{
+    var unrelated = await router.QueryAsync("definitely-not-a-toolbox-command", CancellationToken.None);
+    Require(!unrelated.Any(result => result.Result.PluginId == ToolboxPlugin.PluginId),
+        "Toolbox should reject unrelated implicit queries");
+
+    var uuid = (await router.QueryAsync("uuid", CancellationToken.None))
+        .Single(result => result.Result.PluginId == ToolboxPlugin.PluginId);
+    Require(Guid.TryParse(uuid.Result.Title, out _), "Toolbox uuid should generate a valid UUID");
+    var secondUuid = (await router.QueryAsync("uuid", CancellationToken.None))
+        .Single(result => result.Result.PluginId == ToolboxPlugin.PluginId);
+    Require(uuid.Result.Title != secondUuid.Result.Title, "Toolbox uuid should generate a new value for a new query");
+    var uuidArguments = (await router.QueryAsync("uuid 5", CancellationToken.None))
+        .Single(result => result.Result.PluginId == ToolboxPlugin.PluginId);
+    Require(uuidArguments.Result.DefaultCommand == "__noop", "Toolbox uuid should reject arguments");
+
+    var timestamps = (await router.QueryAsync("timestamp", CancellationToken.None))
+        .Where(result => result.Result.PluginId == ToolboxPlugin.PluginId)
+        .ToArray();
+    Require(timestamps.Length == 2, "Toolbox timestamp should return millisecond and second values");
+    Require(timestamps[0].Result.Id == "timestamp.current.milliseconds" && timestamps[0].Result.MatchScore == 30,
+        "Toolbox timestamp should rank milliseconds first");
+    Require(timestamps[1].Result.Id == "timestamp.current.seconds" && timestamps[1].Result.MatchScore == 27,
+        "Toolbox timestamp should rank seconds second");
+    Require(long.Parse(timestamps[0].Result.Title) / 1000 == long.Parse(timestamps[1].Result.Title),
+        "Toolbox timestamp values should come from the same instant");
+
+    var timestampToDate = (await router.QueryAsync("timestamp 1783843200000", CancellationToken.None))
+        .Where(result => result.Result.PluginId == ToolboxPlugin.PluginId)
+        .ToArray();
+    Require(timestampToDate.Length == 2 && timestampToDate[0].Result.Id == "timestamp.toDate.local" &&
+            timestampToDate[1].Result.Id == "timestamp.toDate.utc",
+        "Toolbox should convert Unix timestamps to local and UTC time");
+    var dateToTimestamp = (await router.QueryAsync("timestamp 2026-07-12T08:00:00Z", CancellationToken.None))
+        .Where(result => result.Result.PluginId == ToolboxPlugin.PluginId)
+        .ToArray();
+    Require(dateToTimestamp.Length == 2 && dateToTimestamp[0].Result.Id == "timestamp.fromDate.milliseconds",
+        "Toolbox should convert ISO dates to Unix timestamps");
+    var invalidTimestamp = (await router.QueryAsync("timestamp 123", CancellationToken.None))
+        .Single(result => result.Result.PluginId == ToolboxPlugin.PluginId);
+    Require(invalidTimestamp.Result.DefaultCommand == "__noop", "Toolbox should reject timestamps with invalid digit counts");
+
+    var base64Menu = (await router.QueryAsync("base64", CancellationToken.None))
+        .Where(result => result.Result.PluginId == ToolboxPlugin.PluginId)
+        .ToArray();
+    Require(base64Menu.Length == 2 && base64Menu[0].Result.Title == "Encode" && base64Menu[1].Result.Title == "Decode",
+        "Toolbox base64 should show an ordered operation menu");
+    var base64Selection = await router.ExecuteAsync(
+        base64Menu[0].Result,
+        base64Menu[0].Result.DefaultCommand,
+        CancellationToken.None);
+    Require(base64Selection.Behavior == CommandBehavior.ShowLauncher && base64Selection.InitialQuery == "base64 encode ",
+        "Toolbox operation menus should continue with a completed query");
+
+    var encoded = (await router.QueryAsync("base64 encode \u4f60\u597d", CancellationToken.None))
+        .Single(result => result.Result.PluginId == ToolboxPlugin.PluginId);
+    Require(encoded.Result.Title == "5L2g5aW9", "Toolbox should Base64-encode UTF-8 text");
+    var decoded = (await router.QueryAsync("base64 decode 5L2g5aW9", CancellationToken.None))
+        .Single(result => result.Result.PluginId == ToolboxPlugin.PluginId);
+    Require(decoded.Result.Title == "\u4f60\u597d", "Toolbox should Base64-decode UTF-8 text");
+    var invalidBase64 = (await router.QueryAsync("base64 decode !!!", CancellationToken.None))
+        .Single(result => result.Result.PluginId == ToolboxPlugin.PluginId);
+    Require(invalidBase64.Result.DefaultCommand == "__noop", "Toolbox should report invalid Base64 input");
+
+    var urlEncoded = (await router.QueryAsync("url encode a+b c", CancellationToken.None))
+        .Single(result => result.Result.PluginId == ToolboxPlugin.PluginId);
+    Require(urlEncoded.Result.Title == "a%2Bb%20c", "Toolbox should use percent encoding for URL components");
+    var urlDecoded = (await router.QueryAsync("url decode a%2Bb%20c", CancellationToken.None))
+        .Single(result => result.Result.PluginId == ToolboxPlugin.PluginId);
+    Require(urlDecoded.Result.Title == "a+b c", "Toolbox should decode URL components");
+
+    var sha256 = (await router.QueryAsync("hash sha256 hello", CancellationToken.None))
+        .Single(result => result.Result.PluginId == ToolboxPlugin.PluginId);
+    Require(sha256.Result.Title == "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
+        "Toolbox should calculate SHA-256 using UTF-8");
+    var hashMenu = (await router.QueryAsync("hash", CancellationToken.None))
+        .Where(result => result.Result.PluginId == ToolboxPlugin.PluginId)
+        .ToArray();
+    Require(hashMenu.Select(result => result.Result.Title).SequenceEqual(["SHA-256", "SHA-512", "SHA-1", "MD5"]),
+        "Toolbox should order hash operations consistently");
+
+    var formattedJson = (await router.QueryAsync("json format {\"b\":2,\"a\":1}", CancellationToken.None))
+        .Single(result => result.Result.PluginId == ToolboxPlugin.PluginId);
+    Require(formattedJson.Result.Title.Contains(Environment.NewLine, StringComparison.Ordinal),
+        "Toolbox should format JSON with indentation");
+    var minifiedJson = (await router.QueryAsync("json minify { \"b\": 2, \"a\": 1 }", CancellationToken.None))
+        .Single(result => result.Result.PluginId == ToolboxPlugin.PluginId);
+    Require(minifiedJson.Result.Title == "{\"b\":2,\"a\":1}", "Toolbox should minify JSON");
+
+    await router.ExecuteAsync(encoded.Result, "toolbox.copy", CancellationToken.None);
+    Require(host.Clipboard.Text == "5L2g5aW9", "Toolbox copy should write the result to the clipboard");
+    await router.ExecuteAsync(decoded.Result, "toolbox.paste", CancellationToken.None);
+    Require(host.Clipboard.Text == "\u4f60\u597d", "Toolbox paste should paste the result text");
+
+    settings.SetPluginSetting(ToolboxPlugin.PluginId, "timestampCommand", "ts");
+    var configuredTimestamp = await router.QueryAsync("ts", CancellationToken.None);
+    Require(configuredTimestamp.Count(result => result.Result.PluginId == ToolboxPlugin.PluginId) == 2,
+        "Toolbox should apply configured tool names immediately");
+    var oldTimestampName = await router.QueryAsync("timestamp", CancellationToken.None);
+    Require(!oldTimestampName.Any(result => result.Result.PluginId == ToolboxPlugin.PluginId),
+        "Toolbox should stop matching an old configured tool name");
+    settings.SetPluginSetting(ToolboxPlugin.PluginId, "timestampCommand", "timestamp");
+
+    settings.SetPluginSetting(ToolboxPlugin.PluginId, "base64Command", "b64");
+    var configuredBase64Menu = (await router.QueryAsync("b64", CancellationToken.None))
+        .First(result => result.Result.PluginId == ToolboxPlugin.PluginId);
+    var configuredSelection = await router.ExecuteAsync(
+        configuredBase64Menu.Result,
+        configuredBase64Menu.Result.DefaultCommand,
+        CancellationToken.None);
+    Require(configuredSelection.InitialQuery == "b64 encode ",
+        "Toolbox operation menus should use the configured tool name");
+    settings.SetPluginSetting(ToolboxPlugin.PluginId, "base64Command", "base64");
+
+    settings.SetPluginSetting(ToolboxPlugin.PluginId, "uuidCommand", "bad name");
+    await router.QueryAsync("uuid", CancellationToken.None);
+    await router.QueryAsync("uuid", CancellationToken.None);
+    Require(logger.Warnings.Count(message => message.Contains("uuidCommand", StringComparison.Ordinal)) == 1,
+        "Toolbox should warn only once for each invalid command setting");
+    settings.SetPluginSetting(ToolboxPlugin.PluginId, "uuidCommand", "uuid");
+
+    settings.SetPluginSetting(ToolboxPlugin.PluginId, "base64Command", "url");
+    var conflict = (await router.QueryAsync("url", CancellationToken.None))
+        .Single(result => result.Result.PluginId == ToolboxPlugin.PluginId);
+    Require(conflict.Result.Id == "toolbox.error.configuration-conflict",
+        "Toolbox should report duplicate configured command names");
+    settings.SetPluginSetting(ToolboxPlugin.PluginId, "base64Command", "base64");
+}
+
 static bool Near(double actual, double expected) => Math.Abs(actual - expected) < 0.01;
 
 public sealed class ConsoleWeedLogger : IWeedLogger
 {
+    public List<string> Warnings { get; } = [];
+
     public void Info(string message) => Console.WriteLine($"INFO {message}");
 
-    public void Warn(string message) => Console.WriteLine($"WARN {message}");
+    public void Warn(string message)
+    {
+        Warnings.Add(message);
+        Console.WriteLine($"WARN {message}");
+    }
 
     public void Error(string message, Exception? exception = null) =>
         Console.WriteLine($"ERROR {message} {exception}");

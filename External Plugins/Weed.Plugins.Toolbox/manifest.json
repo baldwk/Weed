@@ -1,0 +1,21 @@
+{
+  "id": "weed.toolbox",
+  "name": "Toolbox",
+  "version": "0.1.0",
+  "sdkVersion": "0.1",
+  "assembly": "Weed.Plugins.Toolbox.dll",
+  "entryType": "Weed.Plugins.Toolbox.ToolboxPlugin",
+  "runtime": {
+    "resident": false
+  },
+  "activations": [
+    {
+      "type": "implicitQuery",
+      "provider": "toolbox"
+    }
+  ],
+  "permissions": [
+    "clipboard.write",
+    "window.paste"
+  ]
+}

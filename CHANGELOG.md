@@ -1,5 +1,10 @@
 # Changelog
 
+## Pre-release
+
+- Added the Toolbox external plugin with configurable implicit commands for UUID generation, timestamp conversion, Base64, URL encoding, hashes, and JSON formatting.
+- Restyled the external plugin list and added confirmed uninstall with restart-safe cleanup for loaded packages.
+
 ## 0.1.6
 
 - Converted the complete user, plugin, template, and developer documentation set to English.

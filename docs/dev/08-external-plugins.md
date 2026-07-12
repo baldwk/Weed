@@ -124,6 +124,8 @@ The importer:
 4. Replaces an existing directory with the same ID only after user confirmation.
 5. Leaves the new plugin unloaded until the next Weed restart.
 
+Installed packages can be removed from **Settings > External Plugins**. Weed validates that the selected manifest and directory belong to the external plugin root, removes the package atomically when possible, and uses a pending-removal marker when loaded files cannot be moved immediately. A restart unloads the current plugin instance and completes pending cleanup. Plugin settings and data are intentionally retained.
+
 If a source directory contains multiple `.csproj` files, select the plugin project directory directly or make the plugin project name correspond to the manifest assembly.
 
 Manual installation is also supported:
@@ -201,6 +203,19 @@ After import and restart:
 - `Shift+Alt+O`: Select a screen region and recognize it.
 
 The default result action copies recognized text. Saving and opening a text file is a secondary action. See the [OCR Plugin Guide](../../External%20Plugins/Weed.Plugins.Ocr/README.md) for user documentation.
+
+## Toolbox External Plugin
+
+`External Plugins\Weed.Plugins.Toolbox` is a local utility plugin and another external plugin example. It uses one implicit-query provider, recognizes configurable exact tool names, and returns no results for unrelated input.
+
+Create an importable package:
+
+```powershell
+powershell -ExecutionPolicy Bypass `
+  -File scripts\package-toolbox-plugin.ps1
+```
+
+The package supports UUID generation, timestamp conversion, Base64 and URL encoding, hashes, and JSON formatting without network or file access. See the [Toolbox Plugin Guide](../../External%20Plugins/Weed.Plugins.Toolbox/README.md) for commands and settings.
 
 ## Release Checklist
 

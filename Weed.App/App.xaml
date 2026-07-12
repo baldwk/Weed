@@ -23,6 +23,8 @@
         <SolidColorBrush x:Key="SelectedNavBrush" Color="#273D35" />
         <SolidColorBrush x:Key="SelectedNavBorderBrush" Color="#3D7A5E" />
         <SolidColorBrush x:Key="ScrollThumbBrush" Color="#455064" />
+        <SolidColorBrush x:Key="DangerBrush" Color="#FF8D8D" />
+        <SolidColorBrush x:Key="DangerSurfaceBrush" Color="#3A2428" />
         <Style x:Key="WeedScrollBarLineButtonStyle" TargetType="{x:Type RepeatButton}">
             <Setter Property="Focusable" Value="False" />
             <Setter Property="Template">

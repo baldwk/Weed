@@ -44,6 +44,8 @@ public sealed class PluginRuntime : IAsyncDisposable
             return;
         }
 
+        ExternalPluginUninstaller.CleanupPendingRemovals(pluginsDirectory, _logger);
+
         foreach (var manifestPath in Directory.EnumerateFiles(pluginsDirectory, "manifest.json", SearchOption.AllDirectories))
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -162,6 +164,12 @@ public sealed class PluginRuntime : IAsyncDisposable
 
     private static bool IsIgnoredPluginPath(string pluginsDirectory, string manifestPath)
     {
+        var pluginDirectory = Path.GetDirectoryName(manifestPath);
+        if (pluginDirectory is not null && ExternalPluginUninstaller.IsPendingRemoval(pluginDirectory))
+        {
+            return true;
+        }
+
         var relative = Path.GetRelativePath(pluginsDirectory, manifestPath);
         var parts = relative.Split(
             [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],

@@ -13,6 +13,7 @@
     <ProjectReference Include="..\Built-In Plugins\Weed.Plugins.RunCommand\Weed.Plugins.RunCommand.csproj" />
     <ProjectReference Include="..\Built-In Plugins\Weed.Plugins.Screenshot\Weed.Plugins.Screenshot.csproj" />
     <ProjectReference Include="..\Built-In Plugins\Weed.Plugins.Translate\Weed.Plugins.Translate.csproj" />
+    <ProjectReference Include="..\External Plugins\Weed.Plugins.Toolbox\Weed.Plugins.Toolbox.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

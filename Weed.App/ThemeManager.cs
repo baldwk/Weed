@@ -13,7 +13,8 @@ internal static class ThemeManager
         ["SidebarBrush"] = "#151920", ["TextPrimaryBrush"] = "#F5F7FA", ["TextSecondaryBrush"] = "#A8B1BF",
         ["AccentBrush"] = "#5ED394", ["BorderBrush"] = "#343C49", ["SelectionBrush"] = "#286347",
         ["ControlBrush"] = "#202630", ["ControlBorderBrush"] = "#3A4554", ["HoverBrush"] = "#2B333F",
-        ["SelectedNavBrush"] = "#203C31", ["SelectedNavBorderBrush"] = "#4A9A73", ["ScrollThumbBrush"] = "#536174"
+        ["SelectedNavBrush"] = "#203C31", ["SelectedNavBorderBrush"] = "#4A9A73", ["ScrollThumbBrush"] = "#536174",
+        ["DangerBrush"] = "#FF9696", ["DangerSurfaceBrush"] = "#3B2428"
     };
 
     private static readonly IReadOnlyDictionary<string, string> Light = new Dictionary<string, string>
@@ -22,7 +23,8 @@ internal static class ThemeManager
         ["SidebarBrush"] = "#E8EDEF", ["TextPrimaryBrush"] = "#18211D", ["TextSecondaryBrush"] = "#58645F",
         ["AccentBrush"] = "#087A48", ["BorderBrush"] = "#C9D2CE", ["SelectionBrush"] = "#BDE8D0",
         ["ControlBrush"] = "#FFFFFF", ["ControlBorderBrush"] = "#AEBBB5", ["HoverBrush"] = "#DDE6E2",
-        ["SelectedNavBrush"] = "#CDEDDD", ["SelectedNavBorderBrush"] = "#25885B", ["ScrollThumbBrush"] = "#87958F"
+        ["SelectedNavBrush"] = "#CDEDDD", ["SelectedNavBorderBrush"] = "#25885B", ["ScrollThumbBrush"] = "#87958F",
+        ["DangerBrush"] = "#B4232F", ["DangerSurfaceBrush"] = "#FCE8EA"
     };
 
     public static string CurrentTheme { get; private set; } = "system";
