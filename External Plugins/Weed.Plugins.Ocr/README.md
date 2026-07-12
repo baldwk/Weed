@@ -1,40 +1,40 @@
-# Weed OCR 外部插件
+# Weed OCR External Plugin
 
-OCR 插件用于识别屏幕区域或本地图片中的文字。它使用 PP-OCRv5 中文模型，支持中文、英文、数字及常见混排内容。
+The OCR plugin recognizes text from a selected screen region or a local image. It uses PP-OCRv5 Chinese models and supports Chinese, English, digits, and common mixed-language content.
 
-该插件不会随 Weed 主程序自动安装。请获取包含运行依赖与四个模型文件的完整插件 ZIP，然后在 **Settings > External Plugins** 中导入并重启 Weed。仓库维护者或插件开发者可按[外部插件开发文档](../../docs/dev/08-external-plugins.md#ocr-external-plugin)生成安装包。
+The plugin is not installed with the main Weed package. Obtain a complete plugin ZIP containing its runtime dependencies and four model files, import it under **Settings > External Plugins**, then restart Weed. Maintainers and plugin developers can build the package using the [external plugin development guide](../../docs/dev/08-external-plugins.md#ocr-external-plugin).
 
-## 使用方式
+## Usage
 
-| 输入或快捷键 | 用途 |
+| Input or Hotkey | Purpose |
 | --- | --- |
-| `ocr` | 显示截图识别和图片识别入口 |
-| `ocr "C:\path\image.png"` | 识别指定图片文件 |
-| `Shift+Alt+O` | 选择屏幕区域并识别文字 |
+| `ocr` | Show screen-capture and image recognition actions |
+| `ocr "C:\path\image.png"` | Recognize a local image |
+| `Shift+Alt+O` | Select a screen region and recognize its text |
 
-支持 PNG、JPEG、BMP、TIFF 和 WebP 图片。图片路径包含空格时，请使用双引号包裹。
+PNG, JPEG, BMP, TIFF, and WebP images are supported. Wrap paths that contain spaces in double quotes.
 
-识别完成后，默认操作会把文字复制到剪切板。还可以打开原图、打开原图所在目录，或将识别结果保存为文本文件后打开。
+The default result action copies recognized text to the clipboard. Other actions can open the source image, open its folder, or save and open the recognition result as a text file.
 
-## 设置
+## Settings
 
-- **Model directory**：模型目录。留空时使用插件包内的 `models` 目录。
-- **Max side length**：识别时的最大边长。提高数值有助于识别小字，但速度会变慢并占用更多内存。
-- **Padding**：文字检测前添加的图像边距。
-- **Angle detection**：识别并纠正旋转文字，默认开启。
+- **Model directory:** Leave empty to use the bundled `models` directory.
+- **Max side length:** Higher values can improve small-text recognition at the cost of speed and memory.
+- **Padding:** Adds image padding before text detection.
+- **Angle detection:** Detects and corrects rotated text; enabled by default.
 
-通常无需修改这些设置。如果插件提示模型缺失，请重新导入包含完整 `models` 目录的插件包，或在 Model directory 中选择有效模型目录。
+The defaults should work for most images. If models are reported missing, reimport a complete package containing the `models` directory or select a valid model directory in Settings.
 
-## 隐私说明
+## Privacy
 
-OCR 识别在本机完成，不会把图片发送到在线识别服务。区域截图与生成的文本可能保存在 `%LOCALAPPDATA%\Weed\plugins-data\weed.ocr`，请根据内容敏感程度自行清理。
+Recognition runs locally and does not upload images to an online OCR service. Region captures and generated text may be stored under `%LOCALAPPDATA%\Weed\plugins-data\weed.ocr`; remove them manually when working with sensitive content.
 
-外部插件与 Weed 在同一进程中运行。请只导入来源可信的安装包。
+External plugins run inside the Weed process. Import packages only from sources you trust.
 
-## 故障排查
+## Troubleshooting
 
-- **导入后找不到 OCR**：重启 Weed，并确认插件已在 **Settings > Plugins** 中启用。
-- **提示模型文件缺失**：检查插件目录或设置中的模型目录是否包含完整的 PP-OCRv5 模型。
-- **截图快捷键无效**：检查 `Shift+Alt+O` 是否被其他程序占用，可在 Weed 快捷键设置中修改。
-- **小字识别不完整**：适当提高 Max side length，并使用边界清晰、缩放较少的原图。
-- **加载或识别失败**：在插件详情中查看最近日志，确认导入的是完整发布包而不是单独的 DLL。
+- **OCR does not appear after import:** Restart Weed and confirm the plugin is enabled under **Settings > Plugins**.
+- **Model files are missing:** Verify that the plugin or configured model directory contains the complete PP-OCRv5 model set.
+- **The capture hotkey does not work:** Check whether another app uses `Shift+Alt+O`, then change it in Weed's hotkey settings.
+- **Small text is incomplete:** Increase Max side length and prefer a sharp source image with minimal scaling.
+- **Loading or recognition fails:** Inspect the plugin log and confirm you imported the complete published package rather than a single DLL.

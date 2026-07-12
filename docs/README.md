@@ -1,20 +1,20 @@
-# Weed 文档
+# Weed Documentation
 
-文档按读者分为使用文档和开发文档。第一次使用 Weed，请从根目录 [README](../README.md) 和[使用指南](user-guide.md)开始。
+The documentation is organized by audience. New users should start with the root [README](../README.md) and the [User Guide](user-guide.md).
 
-## 使用文档
+## User Documentation
 
-- [使用指南](user-guide.md)：安装、唤起、搜索、设置、更新、数据位置与常见问题。
-- [内置插件指南](../Built-In%20Plugins/README.md)：内置插件的入口、功能、动作和设置。
-- [OCR 插件说明](../External%20Plugins/Weed.Plugins.Ocr/README.md)：OCR 插件的安装与使用。
-- [更新记录](../CHANGELOG.md)：各版本的新增功能与修复。
+- [User Guide](user-guide.md): Installation, search, settings, updates, data locations, and troubleshooting.
+- [Built-In Plugin Guide](../Built-In%20Plugins/README.md): Entry points, features, actions, and settings for built-in plugins.
+- [OCR Plugin Guide](../External%20Plugins/Weed.Plugins.Ocr/README.md): Install and use the optional OCR plugin.
+- [Changelog](../CHANGELOG.md): Features and fixes in each release.
 
-## 开发文档
+## Developer Documentation
 
-技术实现、构建、插件开发和发布指引统一位于 [`docs/dev`](dev/README.md)，不会混入面向用户的 README 与使用说明。
+Architecture, implementation details, build instructions, plugin development, and release guidance live under [`docs/dev`](dev/README.md). They are intentionally kept out of the product README and user guide.
 
-- [开发文档索引](dev/README.md)
-- [外部插件开发](dev/08-external-plugins.md)
-- [插件模板](../templates/plugin/README.md)
+- [Developer Documentation Index](dev/README.md)
+- [External Plugin Development](dev/08-external-plugins.md)
+- [Plugin Template](../templates/plugin/README.md)
 
-文档描述与当前发布版本不一致时，请提交 Issue，并注明 Weed 版本与对应页面。
+If the documentation differs from the current release, open an issue and include the Weed version and the affected page.

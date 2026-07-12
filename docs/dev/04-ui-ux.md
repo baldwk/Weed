@@ -1,58 +1,52 @@
-# 界面与交互约定
+# UI and Interaction
 
-> [返回开发文档索引](README.md)
+> [Back to Developer Documentation](README.md)
 
-## 视觉方向
+## Design Direction
 
-Weed 采用 Alfred 风格：轻量、居中、快速、克制。视觉重点是输入框、结果列表和键盘操作反馈。
+Weed follows a restrained launcher pattern: centered, fast, keyboard-first, and focused on the query and results. The interface supports system, light, and dark themes through shared resources.
 
-设计关键词：
+Core principles:
 
-- 深色优先。
-- 居中浮层。
-- 柔和阴影。
-- 清晰层级。
-- 高对比输入。
-- 图标和文本对齐稳定。
-- 动画短而自然。
+- Keep the launcher visually quiet and information-dense.
+- Preserve stable row, icon, and toolbar dimensions.
+- Use clear selection, focus, and action feedback.
+- Prefer short transitions that never delay input.
+- Keep result rendering consistent across plugins.
 
-## 主搜索窗口
+## Launcher Window
 
-默认尺寸：
+The launcher has two responsive modes:
 
 ```text
-Width: 680px
-Min width: 560px
-Max width: 820px
+Standard width
+  Search input
+  Result list
+
+Preview width
+  Search input
+  Result list | Image or text preview
 ```
 
-布局：
+Behavior:
 
-```text
-Search input
-Result list
-Optional preview panel
-```
+- `Alt+Space` shows and focuses the launcher.
+- A repeated process launch activates the existing window.
+- `Esc` hides the launcher.
+- The launcher may hide on focus loss according to settings.
+- Window height follows the bounded result count without leaving an unnecessary scrollbar for short lists.
 
-主窗口行为：
+## Search Input
 
-- `Alt+Space` 打开。
-- 失焦后按配置关闭。
-- `Esc` 隐藏搜索窗口。
-- `Enter` 执行选中结果默认动作。
-- `Ctrl+数字` 可执行对应候选动作。
+- The search input receives focus whenever the launcher opens.
+- Typing starts a cancellable query.
+- `Ctrl+L` focuses and selects the complete query.
+- Double-clicking the input selects all text.
+- Placeholder, caret, and selection colors come from the active theme.
 
-## 输入框
+## Result Rows
 
-- 输入框是首屏视觉中心。
-- 字号大于结果标题。
-- 光标、选区和占位文本需要适配主题。
-- 输入时列表实时刷新。
-- Keyword 命中后，前缀可显示为轻量 token。
-
-## 结果列表
-
-每行包含：
+Each result can show:
 
 ```text
 Icon
@@ -61,91 +55,75 @@ Subtitle
 Action hint
 ```
 
-行为：
+Rules:
 
-- 上下方向键移动选择。
-- 鼠标悬停更新选择。
-- 支持虚拟化。
-- 图标异步加载。
-- 结果高度稳定，动态文本使用截断或第二行。
+- Row height and icon bounds remain stable as content changes.
+- Long titles and subtitles are clipped or ellipsized rather than resizing the window.
+- The selected row is visible through more than color alone.
+- Mouse movement updates selection only after the pointer actually moves, avoiding accidental selection when the window opens under the cursor.
+- Left click executes the default action; right click exposes secondary actions.
 
-## 分组
+## Keyboard Interaction
 
-当结果来自多个插件时，可显示轻量分组标签。分组标签降低视觉权重，避免影响快速扫描。
+| Key | Behavior |
+| --- | --- |
+| `Enter` | Execute the selected result's default action |
+| `Esc` | Hide the launcher |
+| `Up` / `Down` | Move selection by one result |
+| `PageUp` / `PageDown` | Move selection by five results |
+| `Ctrl+L` | Focus and select the query |
+| `Ctrl+number` | Execute the corresponding visible action |
 
-示例：
+The primary launcher flow must remain fully usable without a mouse.
 
-```text
-Calculator
-Applications
-Clipboard
-```
+## Preview Panel
 
-## 预览面板
+The preview appears only when a result supplies image or detail text and expands the launcher to its preview width.
 
-预览面板用于图片、剪切板富文本、截图结果和文件元信息。
+- Images maintain aspect ratio and stay within bounded dimensions.
+- Text is read-only, selectable, and scrollable when necessary.
+- Preview work must not block query input.
+- Changing selection replaces preview content without shifting result-row geometry.
+- Invalid or missing preview assets fall back to the normal result layout.
 
-行为：
+## Screenshots
 
-- 仅在结果提供图片或详情文本时显示，并同步扩展窗口宽度。
-- 预览内容异步加载。
-- 选中结果变化后更新。
+The screenshot experience includes:
 
-## 插件面板
+- A multi-monitor selection overlay.
+- Region bounds and size feedback.
+- A magnifier for precise edges.
+- Primary-screen capture.
+- Scrolling-area selection, progress, cancellation, and stitched output.
+- A shared annotation surface after capture.
 
-插件可以请求 Host 展示专用面板。面板仍使用 Weed 统一窗口语言。
+Annotation controls include pen, rectangle, ellipse, color, line width, undo, redo, clear, copy, and save. Controls use stable icon buttons and tooltips rather than large text buttons where a familiar icon exists.
 
-当前专用界面包括截图选择/编辑界面和设置页中的插件详情面板。剪切板历史仍通过统一结果列表与预览区域呈现。
+The capture overlay must account for virtual desktop coordinates and per-monitor DPI. Cancelling at any point should restore the previous application state without leaving overlay windows behind.
 
-插件面板应支持：
+## Settings
 
-- 标题栏。
-- 搜索或工具栏。
-- 主内容区域。
-- 状态提示。
-- 键盘关闭。
+The settings window uses a sidebar with these top-level pages:
 
-## 截图 UI
+- **General:** Appearance, tray behavior, focus behavior, and launch at startup.
+- **Hotkeys:** Main launcher shortcut and plugin shortcuts.
+- **Updates:** Automatic checks, manifest URL, download, and status.
+- **External Plugins:** Import, replace, remove, and open plugin directory.
+- **Plugin pages:** Enablement, implicit priority, plugin-owned settings, permissions, dependencies, manifest details, and log tail.
 
-截图插件需要完整 UI：
+Field type should match the data:
 
-- 多显示器覆盖层。
-- 区域选择框。
-- 尺寸提示。
-- 捕获后编辑画布。
-- 工具栏。
-- 保存、复制、取消按钮。
+- Toggle for booleans.
+- Numeric input for bounded integers.
+- Select control for enumerated options.
+- Path picker or path input for filesystem locations.
+- Text or secret input for service URLs and credentials.
 
-标注工具：
+Saving should be immediate and predictable. Settings that require restart must say so where the change is made.
 
-- 画笔。
-- 矩形框。
-- 圆形或椭圆。
-- 颜色选择。
-- 线宽选择。
-- 撤销和重做。
+## Theme
 
-滚动截图 UI：
-
-- 选择滚动区域或目标窗口。
-- 开始捕获按钮。
-- 捕获进度提示。
-- 拼接预览。
-- 进入同一编辑画布进行标注、复制和保存。
-
-## 设置页
-
-设置页导航包含：
-
-- General：外观、托盘、失焦行为与开机启动。
-- Hotkeys：主唤起快捷键和插件快捷键。
-- Updates：自动检查、更新清单地址、检查与下载状态。
-- External Plugins：导入、替换、删除和打开插件目录。
-- 每个插件的详情页：启用状态、优先级、专属设置、权限、依赖、manifest 与日志。
-
-## 主题
-
-主题通过 token 管理：
+Theme resources include concepts such as:
 
 ```text
 Background
@@ -155,45 +133,31 @@ TextPrimary
 TextSecondary
 Accent
 Border
-Shadow
 Selection
 Danger
 ```
 
-当前提供：
+System mode follows Windows appearance changes. Light and dark selections apply immediately. Shared brushes must not be mutated after freezing; replace resources atomically when themes change.
 
-- 深色主题。
-- 浅色主题。
-- 跟随系统。
+## Accessibility
 
-Windows 10 使用稳定的自绘背景、阴影和透明效果。视觉效果以可读性和性能为优先。
+- Text and controls maintain practical contrast in every theme.
+- Selection and error state are not communicated by color alone.
+- Icon buttons have tooltips and accessible names.
+- Focus order follows visual order.
+- Text remains readable at Windows display scaling values.
+- Launcher, preview, settings, and capture overlays work across mixed-DPI monitors.
+- Dynamic text never overlaps adjacent controls.
 
-## 键盘体验
+## Interaction Testing
 
-主流程应可完全通过键盘完成：
+Test at minimum:
 
-- 打开 Weed。
-- 输入查询。
-- 选择结果。
-- 执行动作。
-- 切换动作。
-- 关闭窗口。
-
-常用键：
-
-| Key | 行为 |
-| --- | --- |
-| `Enter` | 执行默认动作。 |
-| `Esc` | 返回或关闭。 |
-| `Up/Down` | 移动选择。 |
-| `PageUp/PageDown` | 快速移动。 |
-| `Tab` | 进入动作选择。 |
-| `Ctrl+L` | 聚焦输入框。 |
-
-## 可访问性
-
-- 文本对比度满足日常可读性。
-- 选中状态不只依赖颜色。
-- 图标按钮有 tooltip 和可访问名称。
-- 支持高 DPI 和多显示器。
-- 字体渲染遵循系统设置。
+- Empty, one-result, short, and long result lists.
+- Long titles, subtitles, paths, and unbroken words.
+- Keyboard-only query, selection, action, and close flows.
+- Mouse selection immediately after opening under the pointer.
+- Light, dark, and live system-theme changes.
+- Image and text previews.
+- Multiple monitors with different DPI and negative virtual coordinates.
+- Screenshot cancellation during selection, scrolling, editing, and saving.

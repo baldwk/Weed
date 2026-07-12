@@ -1,58 +1,58 @@
-# 产品边界与技术概览
+# Product Boundaries and Technical Overview
 
-> [返回开发文档索引](README.md)
+> [Back to Developer Documentation](README.md)
 
-## 产品定位
+## Product Positioning
 
-Weed 是 Windows 10+ 上的快捷启动器和效率工具。它以统一搜索窗口为入口，将应用启动、计算、剪切板历史、截图、翻译、文件搜索和外部插件工作流集中在一致的键盘交互中。
+Weed is a launcher and productivity tool for Windows 10 and later. A single search window brings together application launch, calculation, clipboard history, screenshots, translation, file search, and external plugin workflows.
 
-产品优先级依次为：低操作成本、响应及时、结果可预测、用户配置明确，以及第一方和外部插件体验一致。
+Product priorities are low interaction cost, responsive input, predictable ranking, explicit user control, and a consistent experience across first-party and external plugins.
 
-## 当前范围
+## Current Scope
 
-- `Alt+Space` 唤起主搜索窗口，并提供托盘常驻与单实例激活。
-- 支持 Keyword、Hotkey 和 ImplicitQuery 三种入口。
-- 支持全局快捷键编辑、插件启停、无前缀查询优先级和插件自定义设置。
-- 内置 App Launcher、Calculator、Clipboard、Screenshot、Emoji Search、Translator、File Search 和 Run Command。
-- 支持导入 ZIP、DLL、已发布目录和源码目录形式的外部插件。
-- 提供更新清单检查、包下载和 SHA256 校验。
-- 提供 manifest schema、插件模板、发布脚本与 SmokeTests。
+- `Alt+Space` opens the launcher; the app remains available in the tray and uses single-instance activation.
+- Keyword, Hotkey, and ImplicitQuery activation paths.
+- Editable global hotkeys, plugin enablement, implicit-query priority, and plugin-owned settings.
+- Built-in App Launcher, Calculator, Clipboard, Screenshot, Emoji Search, Translator, File Search, and Run Command plugins.
+- External plugin import from ZIP, DLL, published directory, or source directory.
+- Update manifest checks, package download, and SHA256 validation.
+- Manifest schemas, a plugin template, release scripts, and SmokeTests.
 
-## 非目标
+## Non-Goals
 
-- 外部插件不运行在安全沙箱中，权限字段目前只用于能力声明。
-- File Search 不维护自己的全盘文件索引，而是依赖 Everything。
-- Translator 不提供自建翻译模型，会调用用户选择的在线服务。
-- 当前发行包是 Windows x64 的免安装压缩包，不包含安装器、自动替换程序或代码签名。
-- 当前不支持 macOS、Linux 或移动平台。
+- External plugins are not sandboxed. Permission fields currently describe capabilities only.
+- File Search does not maintain its own full-disk index; it depends on Everything.
+- Translator does not ship a local translation model; it calls the selected online provider.
+- The current release is a portable Windows x64 archive without an installer, automatic file replacement, or code signing.
+- macOS, Linux, and mobile platforms are not supported.
 
-## 设计原则
+## Design Principles
 
-- Host 负责统一的窗口、主题、设置、快捷键、查询路由、结果排序与插件生命周期。
-- 业务能力优先由插件提供，第一方和外部插件共享公开抽象。
-- UI 由 Host 渲染，插件返回结构化结果和动作，不直接拼装主搜索界面。
-- 用户设置具有最高持久化优先级，升级时应保留启用状态、快捷键和插件参数。
-- 查询、索引和耗时插件调用应支持异步与取消，避免阻塞输入线程。
-- 本地数据默认留在用户设备上；涉及网络的插件必须明确说明外发内容。
+- The Host owns windows, themes, settings, hotkeys, query routing, result ranking, and plugin lifecycle.
+- Product capabilities should be implemented as plugins where practical. First-party and external plugins share public abstractions.
+- The Host renders structured results and actions so the launcher stays visually consistent.
+- Persisted user settings take precedence and should survive plugin or Host upgrades.
+- Queries, indexing, and expensive plugin calls should be asynchronous and cancellable.
+- Data stays local by default. Networked plugins must document what leaves the machine.
 
-## 技术基线
+## Technical Baseline
 
-- 语言与运行时：C#、.NET 9。
-- 桌面 UI：WPF。
-- 本地数据：SQLite、FTS5 与 JSON 配置。
-- 插件形式：managed .NET DLL。
-- 平台能力：Win32 API、Windows Shell API 与 WPF interop。
-- 当前目标运行时：`win-x64`，发布包依赖 .NET 9 Desktop Runtime x64。
+- Language and runtime: C# and .NET 9.
+- Desktop UI: WPF.
+- Local data: SQLite, FTS5, and JSON configuration.
+- Plugin format: managed .NET DLL.
+- Platform integration: Win32, Windows Shell APIs, and WPF interop.
+- Current target: `win-x64`; packages require the .NET 9 Desktop Runtime x64.
 
-## 关键术语
+## Terminology
 
-- **Host**：Weed 主程序，负责公共体验、调度和插件运行环境。
-- **Plugin**：通过公开 SDK 提供查询、命令、设置或常驻服务的 managed DLL。
-- **First-party plugin**：随 Weed 发布并由仓库维护的内置插件。
-- **External plugin**：用户单独导入的插件，与 Host 同进程运行。
-- **Keyword**：带命令前缀的查询入口，例如 `clip hello`。
-- **Hotkey**：用户可配置的全局快捷键入口，例如 `Shift+Ctrl+C`。
-- **ImplicitQuery**：无前缀查询入口，例如 `1+2` 或 `vscode`。
-- **Resident plugin**：启用后需要常驻的插件，例如 Clipboard。
-- **Result**：插件返回给 Host 的结构化搜索结果。
-- **Action**：用户对结果执行的打开、复制、粘贴、删除或保存等操作。
+- **Host:** The Weed application and shared runtime services.
+- **Plugin:** A managed DLL that provides queries, commands, settings, or resident services through the public SDK.
+- **First-party plugin:** A built-in plugin maintained and released with Weed.
+- **External plugin:** A separately imported plugin that runs in the Host process.
+- **Keyword:** A prefixed query such as `clip hello`.
+- **Hotkey:** A configurable global shortcut such as `Shift+Ctrl+C`.
+- **ImplicitQuery:** A query without a prefix, such as `1+2` or `vscode`.
+- **Resident plugin:** A plugin with an active lifecycle while enabled, such as Clipboard.
+- **Result:** A structured search result returned to the Host.
+- **Action:** An operation such as open, copy, paste, delete, or save.

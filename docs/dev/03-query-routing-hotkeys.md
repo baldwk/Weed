@@ -1,10 +1,10 @@
-# 查询路由与快捷键
+# Query Routing and Hotkeys
 
-> [返回开发文档索引](README.md)
+> [Back to Developer Documentation](README.md)
 
-## 查询入口
+## Activation Paths
 
-Weed 支持三种用户入口：
+Weed supports three activation types:
 
 ```text
 Keyword
@@ -12,234 +12,171 @@ Hotkey
 ImplicitQuery
 ```
 
+The router considers only enabled plugins and passes a cancellation token through every asynchronous query or command dispatch.
+
 ## QueryContext
 
-```csharp
-public sealed record QueryContext
-{
-    public required string RawText { get; init; }
-    public required string NormalizedText { get; init; }
-    public required QueryActivation Activation { get; init; }
-    public string? Keyword { get; init; }
-    public string? Command { get; init; }
-    public DateTimeOffset StartedAt { get; init; }
-}
-```
+`QueryContext` identifies the raw and normalized input, activation type, matched keyword or provider, and any plugin-specific routing information.
 
-输入规范化包括：
+Normalization happens before routing and covers trimming, whitespace, case-insensitive matching, and common full-width input forms. Plugins still receive the original text for display or exact parsing.
 
-- 去除首尾空白。
-- 全角字符转半角。
-- 中文标点转常用英文符号。
-- 大小写折叠。
-- 连续空白合并。
+## Keyword Routing
 
-## Keyword 路由
-
-Keyword 查询流程：
+Given:
 
 ```text
-User input
-  -> Parse first token
-  -> Match keyword registry
-  -> Build QueryContext with keyword
-  -> Dispatch to target plugin
-  -> Render plugin results
+clip project plan
 ```
 
-示例：
+the router:
+
+1. Matches the first token against enabled keyword activations.
+2. Selects the longest valid keyword when multiple entries overlap.
+3. Removes the keyword and leading whitespace.
+4. Sends `project plan` to the matching provider.
+
+Keyword matching is case-insensitive. Plugins should not reparse the keyword unless they intentionally expose multiple aliases with different behavior.
+
+When only a keyword is present, the plugin receives an empty query and may return recent items, common actions, or a help result.
+
+## Hotkey Routing
+
+The Host registers global hotkeys after plugin initialization and user settings are loaded.
 
 ```text
-clip invoice
+Physical key press
+  -> Windows hotkey service
+  -> Activation command lookup
+  -> Show launcher with an initial query, or execute the command directly
 ```
 
-`clip` 命中剪切板插件后，`invoice` 作为查询内容传给插件。
+The main launcher hotkey is application-level. Plugin hotkeys are keyed by `<pluginId>:<command>` and stored in `hotkeys.json`.
 
-## Hotkey 路由
+Registration failures must be logged and surfaced in Settings. One failed plugin hotkey must not prevent other hotkeys from registering.
 
-Hotkey 流程：
+## ImplicitQuery Routing
 
-```text
-Global hotkey pressed
-  -> HotkeyManager resolves command
-  -> Core builds CommandContext
-  -> PluginHost dispatches command
-  -> Plugin returns CommandResult
-  -> App shows panel, starts tool, or closes according to result
-```
+Every enabled implicit provider can inspect unprefixed input. Current providers include App Launcher, Calculator, and Run Command.
 
-Hotkey 可触发三类行为：
+Providers should return no result when the input is clearly irrelevant:
 
-| 行为 | 说明 | 示例 |
-| --- | --- | --- |
-| `showLauncher` | 打开 Weed 主窗口并进入指定模式。 | 打开插件搜索面板。 |
-| `showPluginPanel` | 打开插件专用面板。 | 展示剪切板历史。 |
-| `executeCommand` | 直接执行命令。 | 进入区域截屏。 |
+- Calculator accepts only expression-like input.
+- Run Command searches only its allowlist.
+- App Launcher avoids low-confidence results for empty or insignificant input.
 
-## ImplicitQuery 路由
+Implicit queries are where plugin priority and cross-plugin scoring matter most.
 
-ImplicitQuery 是无前缀查询。Host 将输入分发给声明了 `implicitQuery` 的插件。
+## Ranking
 
-```text
-User input
-  -> Normalize
-  -> Dispatch to implicit providers
-  -> Collect results
-  -> Apply ranking
-  -> Render merged list
-```
-
-当前第一方 implicit 插件：
-
-- AppLauncher
-- Calculator
-
-第三方插件声明 implicit 入口后，可在设置页配置插件优先级。
-
-## 排序公式
-
-ImplicitQuery 使用三项总分：
+The final score combines three concepts:
 
 ```text
 FinalScore = PluginMatchScore + UsageScore + PriorityScore
 ```
 
-| 项 | 范围 | 来源 | 说明 |
-| --- | --- | --- | --- |
-| `PluginMatchScore` | 0..30 | 插件 | 插件对当前查询和结果的匹配度判断。 |
-| `UsageScore` | 0..30 | Weed | 用户历史选择行为。 |
-| `PriorityScore` | 0..100 | 用户配置 | 插件级别优先级，默认 0。 |
+Exact numeric weights are implementation details and may evolve. The invariants are more important:
 
-Keyword 和 Hotkey 入口直接命中目标插件，插件优先级只参与 ImplicitQuery 合并排序。
+- A strong exact match should outrank a loose frequent match.
+- Usage history may refine close results but should not dominate relevance.
+- User priority affects only implicit competition.
+- Stable tie-breakers keep result order predictable.
 
-## PluginMatchScore
+### PluginMatchScore
 
-插件返回每条结果的 `MatchScore`，范围为 `0..30`。
-
-推荐解释：
-
-| 分数 | 含义 |
-| --- | --- |
-| `0` | 当前结果不展示。 |
-| `1..10` | 弱匹配。 |
-| `11..20` | 普通匹配。 |
-| `21..30` | 强匹配。 |
-
-AppLauncher 示例：
-
-- 完整名称前缀匹配：高分。
-- 拼音首字母匹配：中高分。
-- 模糊包含匹配：中分。
-- 弱相似匹配：低分。
-
-Calculator 示例：
-
-- 明确表达式并能求值：高分。
-- 需要补全或存在歧义：低到中分。
-
-## UsageScore
-
-Weed 根据用户选择行为计算历史分。历史记录键由以下字段组成：
+The plugin owns semantic relevance. Suggested ordering:
 
 ```text
-pluginId
-resultId
-defaultCommand
+Exact match
+Prefix match
+Token or acronym match
+Substring match
+Subsequence or fuzzy match
+Fallback result
 ```
 
-计分规则：
+Scores should be internally consistent and leave enough space for the Host to apply usage and priority adjustments.
 
-- 用户执行某个结果后，该结果的使用权重增加。
-- 最近使用的结果获得更高权重。
-- 同一查询下历史最高权重映射为 30 分，其余按比例映射。
-- 没有历史记录的结果为 0 分。
+### UsageScore
 
-## PriorityScore
+Usage history is keyed by plugin, result, and command. It uses selection count and recency with bounded influence so repeated use cannot permanently override a better exact match.
 
-插件优先级是用户配置项，范围 `0..100`，默认 `0`。
+### PriorityScore
 
-配置粒度：
+Users set plugin priority from `0` to `100`. Priority applies only to ImplicitQuery results and should act as a preference, not as an unconditional override.
 
-```text
-Plugin-level
-```
+### Tie-Breakers
 
-只有支持 ImplicitQuery 的插件在设置页展示该项。用户配置后的值参与该插件所有 implicit 结果排序。
+Use deterministic secondary ordering such as:
 
-## Tie-breaker
+1. Final score descending.
+2. Plugin match score descending.
+3. Stable plugin registration order.
+4. Result ID or title ordinal order.
 
-总分相同时按以下顺序稳定排序：
+## Cancellation and Result Updates
 
-```text
-1. 最近被选择的结果在前
-2. 插件返回顺序靠前的结果在前
-3. 插件 ID 字典序
-4. Result ID 字典序
-```
-
-## 查询取消和增量刷新
-
-- 每次输入变化都会创建新的查询上下文。
-- 旧查询的 `CancellationToken` 会被触发。
-- 已返回的结果可以立即展示。
-- 后续返回的结果通过同一排序规则合并。
-- UI 线程只接收最终可渲染状态。
+- Every input change cancels the previous query token.
+- Plugins should check cancellation before and after expensive I/O.
+- Results from a cancelled query must never replace results for newer input.
+- Exceptions are isolated per plugin and logged; other providers should still return results.
+- The UI shows only a bounded initial result set and may load more as selection approaches the end.
 
 ## Hotkey Manifest
 
 ```json
 {
   "type": "hotkey",
-  "command": "clipboard.show",
-  "defaultKeys": "Shift+Ctrl+C",
+  "command": "screenshot.region",
+  "defaultKeys": "Shift+Alt+A",
   "configurable": true,
-  "behavior": "showPluginPanel"
+  "behavior": "executeCommand"
 }
 ```
 
-字段说明：
+Supported behavior concepts:
 
-| 字段 | 说明 |
-| --- | --- |
-| `command` | 触发时分发给插件的命令 ID。 |
-| `defaultKeys` | 插件提供的默认快捷键。 |
-| `configurable` | 用户是否可以修改。 |
-| `behavior` | Host 对命令结果的窗口处理方式。 |
+- Open the launcher with a plugin query.
+- Execute a command without first showing results.
+- Reopen the launcher with a query after a command completes.
 
-## 快捷键配置
+## User Overrides
 
-Host 统一管理全局快捷键：
+```json
+{
+  "weed.screenshot:screenshot.region": {
+    "keys": "Shift+Alt+A",
+    "enabled": true
+  }
+}
+```
 
-- 启动时读取所有插件默认快捷键。
-- 应用用户配置覆盖。
-- 检查快捷键冲突。
-- 注册有效快捷键。
-- 插件禁用时注销对应快捷键。
-- 插件更新后保留用户配置。
+Manifest defaults seed missing values. Existing user overrides remain authoritative across plugin updates.
 
-快捷键设置页提供：
+## Hotkey Text Format
 
-- 当前按键。
-- 修改按键。
-- 禁用该快捷键。
-- 恢复默认。
-- 冲突提示。
-- 所属插件和命令说明。
-
-## 快捷键表示
-
-快捷键使用规范化字符串：
+Canonical modifier order:
 
 ```text
-Ctrl+Shift+C
+Ctrl+Shift+Alt+Win+Key
+```
+
+Examples:
+
+```text
 Alt+Space
+Ctrl+Shift+C
 Shift+Alt+A
+Win+Shift+S
 ```
 
-修饰键顺序：
+The parser normalizes `Control` to `Ctrl`, title-cases named keys, and uppercases single-character keys. A shortcut must contain one non-modifier key.
 
-```text
-Ctrl -> Shift -> Alt -> Win
-```
+## Validation Checklist
 
-用户输入快捷键时，UI 实时解析并显示规范化结果。
+- Keyword aliases do not overlap unexpectedly.
+- Empty keyword queries return intentional content.
+- Implicit providers reject irrelevant input quickly.
+- Cancelling and immediately typing a new query never displays stale results.
+- Exact matches remain above looser frequently used results.
+- Hotkey conflicts are visible and do not disable unrelated shortcuts.
+- User overrides survive plugin and Host updates.

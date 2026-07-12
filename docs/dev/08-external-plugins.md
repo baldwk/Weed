@@ -1,18 +1,18 @@
-# 外部插件开发与分发
+# External Plugin Development
 
-> [返回开发文档索引](README.md)
+> [Back to Developer Documentation](README.md)
 
-## 运行模型
+## Runtime Model
 
-外部插件是实现 `IWeedPlugin` 的 managed .NET DLL。Weed 启动时扫描 `%LOCALAPPDATA%\Weed\plugins` 下的 `manifest.json`，验证入口程序集和类型，并为每个外部插件创建独立 `AssemblyLoadContext`。
+An external plugin is a managed .NET DLL with a public type that implements `IWeedPlugin`. At startup, Weed scans `manifest.json` files under `%LOCALAPPDATA%\Weed\plugins`, validates the assembly and entry type, and creates a separate `AssemblyLoadContext` for each external plugin.
 
-`Weed.Abstractions` 由 Host 默认上下文提供，不应重复打包。插件自己的托管依赖、原生库和资源应放在插件发布目录中。
+The Host supplies `Weed.Abstractions` from its default context. Do not package another copy. Put all other managed dependencies, native libraries, and runtime assets in the plugin publish directory.
 
-外部插件仍与 Host 处于同一进程。加载上下文用于依赖解析和卸载边界，不是安全沙箱；插件崩溃、阻塞或访问系统资源都可能影响 Weed。
+External plugins still run in the Host process. A load context creates dependency and unload boundaries, not a security sandbox. A plugin can crash, block, or access resources available to the Weed process.
 
 ## Manifest
 
-插件包根目录必须包含 `manifest.json`：
+Every package must contain `manifest.json` at its root:
 
 ```json
 {
@@ -39,23 +39,23 @@
 }
 ```
 
-关键字段：
+Important fields:
 
-- `id`：稳定且全局唯一的插件标识，也是安装目录名和设置命名空间。
-- `version`：插件版本，不等同于 Weed 主程序版本。
-- `sdkVersion`：目标插件 SDK 版本；当前为 `0.1`。
-- `assembly`：相对于包根目录的插件 DLL 路径，不能跳出插件目录。
-- `entryType`：实现 `IWeedPlugin` 的 public 类型全名。
-- `runtime.resident`：是否需要在启用后启动常驻生命周期。
-- `activations`：Keyword、Hotkey 或 ImplicitQuery 入口。
-- `permissions`：插件需要的 Host 能力声明，只用于展示和审查，不执行沙箱限制。
-- `externalDependencies`：可选的外部程序依赖。Host 可检查进程或内置探针，并按声明尝试启动已安装程序。
+- `id`: Stable, globally unique plugin identity and settings namespace.
+- `version`: Plugin version, independent of the Weed version.
+- `sdkVersion`: Target plugin SDK version; currently `0.1`.
+- `assembly`: Plugin DLL path relative to the package root. It cannot escape the plugin directory.
+- `entryType`: Fully qualified public type that implements `IWeedPlugin`.
+- `runtime.resident`: Whether the plugin has an active resident lifecycle.
+- `activations`: Keyword, Hotkey, or ImplicitQuery entry points.
+- `permissions`: Capabilities shown to users for review. They do not enforce a sandbox.
+- `externalDependencies`: Optional external programs. The Host can check process or built-in probes and attempt to start an installed dependency.
 
-使用 [`schemas/manifest.schema.json`](../../schemas/manifest.schema.json) 校验结构。字段与生命周期的完整定义见[插件系统](02-plugin-system.md)。
+Validate the file with [`schemas/manifest.schema.json`](../../schemas/manifest.schema.json). See [Plugin System](02-plugin-system.md) for full fields and lifecycle contracts.
 
-## 创建项目
+## Create a Project
 
-从 [`templates/plugin`](../../templates/plugin/README.md) 开始，或创建引用 `Weed.Abstractions` 的类库。仓库内开发可使用项目引用：
+Start from [`templates/plugin`](../../templates/plugin/README.md), or create a class library that references `Weed.Abstractions`. Inside this repository, use a project reference:
 
 ```xml
 <ProjectReference Include="..\..\Weed.Abstractions\Weed.Abstractions.csproj">
@@ -63,7 +63,7 @@
 </ProjectReference>
 ```
 
-独立仓库可引用 Weed 发布包中的 `Weed.Abstractions.dll`：
+In an independent repository, reference `Weed.Abstractions.dll` from a Weed distribution:
 
 ```xml
 <Reference Include="Weed.Abstractions">
@@ -72,11 +72,11 @@
 </Reference>
 ```
 
-当前 Host 目标为 .NET 9。普通插件可使用 `net9.0`；使用 Windows API 或 WPF 类型时使用 `net9.0-windows`。入口类必须是 public，并实现 `IWeedPlugin`。
+The current Host targets .NET 9. Use `net9.0` for platform-neutral plugins or `net9.0-windows` when Windows APIs or WPF types are required.
 
-## 发布插件
+## Publish a Plugin
 
-使用 `dotnet publish` 生成完整目录，不要只复制 `dotnet build` 的主 DLL：
+Use `dotnet publish`; do not distribute only the main DLL from `dotnet build`:
 
 ```powershell
 dotnet publish .\Example.Plugin.csproj `
@@ -86,7 +86,7 @@ dotnet publish .\Example.Plugin.csproj `
   -o .\dist\example.plugin
 ```
 
-发布目录示例：
+Expected layout:
 
 ```text
 example.plugin\
@@ -98,7 +98,7 @@ example.plugin\
   assets\
 ```
 
-将目录中的内容直接压缩，确保 ZIP 根部就是 `manifest.json`：
+Zip the directory contents so `manifest.json` is at the archive root:
 
 ```powershell
 Compress-Archive `
@@ -106,27 +106,27 @@ Compress-Archive `
   -DestinationPath .\com.example.weather-0.1.0-win-x64.zip
 ```
 
-## 导入流程
+## Import Behavior
 
-**Settings > External Plugins** 支持导入：
+**Settings > External Plugins** accepts:
 
-- 根部包含 `manifest.json` 的 ZIP 或目录。
-- 只有一个子目录且该子目录包含 `manifest.json` 的 ZIP 或目录。
-- 包含 `manifest.json` 和单个插件 `.csproj` 的源码目录；Weed 会执行 Release、当前 Windows RID、非 self-contained 的 `dotnet publish`。
-- 旁边有匹配 manifest 的 DLL。
-- 含 public `IWeedPlugin` 类型的单 DLL；如果类型提供静态 `Manifest`，Weed 使用该声明，否则生成最小 manifest。
+- A ZIP or directory with `manifest.json` at its root.
+- A ZIP or directory with one child directory containing `manifest.json`.
+- A source directory with `manifest.json` and one plugin `.csproj`; Weed runs a Release, current Windows RID, non-self-contained publish.
+- A DLL with a matching neighboring manifest.
+- A DLL containing a public `IWeedPlugin` type. Weed uses a static `Manifest` member when present or generates a minimal manifest otherwise.
 
-导入器执行以下步骤：
+The importer:
 
-1. 读取并验证 manifest。
-2. 校验 `id`、`assembly`、`entryType` 与路径边界。
-3. 将内容复制到 `%LOCALAPPDATA%\Weed\plugins\<manifest.id>`。
-4. 用户确认后可替换同 ID 的现有目录。
-5. 等待下次启动再加载新插件。
+1. Reads and validates the manifest.
+2. Validates `id`, `assembly`, `entryType`, and package path boundaries.
+3. Copies files to `%LOCALAPPDATA%\Weed\plugins\<manifest.id>`.
+4. Replaces an existing directory with the same ID only after user confirmation.
+5. Leaves the new plugin unloaded until the next Weed restart.
 
-如果源码目录包含多个 `.csproj`，应直接选择插件项目目录，或让插件项目名与 manifest 的 `assembly` 对应。
+If a source directory contains multiple `.csproj` files, select the plugin project directory directly or make the plugin project name correspond to the manifest assembly.
 
-也可以手动安装已发布目录：
+Manual installation is also supported:
 
 ```powershell
 $target = "$env:LOCALAPPDATA\Weed\plugins\com.example.weather"
@@ -134,11 +134,11 @@ New-Item -ItemType Directory -Force -Path $target
 Copy-Item .\dist\example.plugin\* $target -Recurse -Force
 ```
 
-安装或替换后重启 Weed。
+Restart Weed after installation or replacement.
 
-## 独立仓库分发
+## Independent Distribution
 
-第三方插件应在自己的仓库中维护版本、文档和 Release。建议结构：
+Third-party plugins should maintain versions, documentation, and Releases in their own repositories. Recommended layout:
 
 ```text
 weed-plugin-example\
@@ -149,33 +149,33 @@ weed-plugin-example\
   .github\workflows\release.yml
 ```
 
-每个 Release 建议包含：
+Each release should include:
 
 - `<plugin-id>-<version>-win-x64.zip`
-- 面向用户的安装、入口、设置、网络与数据处理说明
-- 变更记录
-- 可选的 SHA256 校验和
+- Installation, entry point, settings, network, and data-handling documentation
+- Release notes
+- Preferably, a SHA256 checksum
 
-生成校验和：
+Generate a checksum with:
 
 ```powershell
 (Get-FileHash -Algorithm SHA256 `
   .\com.example.weather-0.1.0-win-x64.zip).Hash.ToLowerInvariant()
 ```
 
-不要把开发机的绝对路径、密钥、缓存、模型下载临时文件或不需要的 SDK 程序集放入发布包。
+Never ship developer-machine paths, secrets, caches, temporary model downloads, or unnecessary SDK assemblies.
 
 ## OCR External Plugin
 
-`External Plugins\Weed.Plugins.Ocr` 是仓库内的外部插件示例，`Weed.App` 不直接引用它。插件使用 RapidOCRLib 与 PP-OCRv5 中文模型。
+`External Plugins\Weed.Plugins.Ocr` is the repository's external plugin example. `Weed.App` does not reference it. The plugin uses RapidOCRLib and PP-OCRv5 Chinese models.
 
-构建源码：
+Build the source:
 
 ```powershell
 dotnet build "External Plugins\Weed.Plugins.Ocr\Weed.Plugins.Ocr.csproj"
 ```
 
-生成包含模型和运行依赖的导入包：
+Create an importable package with models and runtime dependencies:
 
 ```powershell
 powershell -ExecutionPolicy Bypass `
@@ -183,7 +183,7 @@ powershell -ExecutionPolicy Bypass `
   -FetchModels
 ```
 
-输出：
+Output:
 
 ```text
 artifacts\plugins\weed.ocr\
@@ -192,30 +192,30 @@ artifacts\plugins\weed.ocr-0.1.0-win-x64.zip
 artifacts\plugins\weed.ocr-0.1.0.plugin-release.json
 ```
 
-模型约 21 MiB；包含 RapidOCR、ONNX、OpenCV 运行时与模型的 ZIP 约 60 MiB，实际大小随依赖版本变化。`-FetchModels` 将模型下载到打包目录，不写入源码控制。
+The model set is about 21 MiB. A ZIP with RapidOCR, ONNX, OpenCV runtimes, and models is about 60 MiB, depending on dependency versions. `-FetchModels` downloads models into the package staging directory, not source control.
 
-导入并重启后：
+After import and restart:
 
-- `ocr`：显示截图识别和图片识别入口。
-- `ocr "C:\path\image.png"`：识别本地图片。
-- `Shift+Alt+O`：选择屏幕区域并识别。
+- `ocr`: Show capture and image recognition entries.
+- `ocr "C:\path\image.png"`: Recognize a local image.
+- `Shift+Alt+O`: Select a screen region and recognize it.
 
-默认结果动作复制识别文字；保存并打开文本文件是次要动作。面向用户的说明见 [OCR 插件 README](../../External%20Plugins/Weed.Plugins.Ocr/README.md)。
+The default result action copies recognized text. Saving and opening a text file is a secondary action. See the [OCR Plugin Guide](../../External%20Plugins/Weed.Plugins.Ocr/README.md) for user documentation.
 
-## 发布前检查
+## Release Checklist
 
-- 从干净目录解压 ZIP，确认根部存在 manifest、DLL、`.deps.json` 与全部依赖。
-- 使用 schema 校验 manifest，并确认版本与文件名一致。
-- 验证首次导入、覆盖导入、重启加载、禁用、设置和卸载。
-- 验证依赖缺失、网络失败、无效输入和取消操作能返回可理解的结果。
-- 检查日志不包含密钥、剪切板全文、翻译正文或其他不必要的敏感数据。
-- 记录插件会访问的文件、网络服务、剪切板和屏幕能力。
+- Extract the ZIP to a clean directory and verify its manifest, DLL, `.deps.json`, and dependencies.
+- Validate the manifest schema and confirm its version matches the filename.
+- Test first import, replacement, restart loading, disablement, settings, and removal.
+- Test missing dependencies, network failures, invalid input, and cancellation.
+- Ensure logs do not contain secrets, clipboard content, translation text, or other unnecessary sensitive data.
+- Document file, network, clipboard, and screen access.
 
-## 故障排查
+## Troubleshooting
 
-- **插件未出现**：重启 Weed，检查插件启用状态与详情页日志。
-- **依赖加载失败**：使用 `dotnet publish` 而不是只分发 `dotnet build` 输出。
-- **ZIP 能导入但不能加载**：确认 `manifest.json` 位于根部，并且 `assembly` 指向包内真实 DLL。
-- **源码导入失败**：确认安装了 .NET 9 SDK，且目录中能唯一定位插件项目。
-- **原生库加载失败**：检查 `runtimes\win-x64\native` 资源和进程架构。
-- **版本替换后仍是旧行为**：确认勾选替换现有插件，然后重启 Weed。
+- **Plugin does not appear:** Restart Weed and inspect enabled state and logs.
+- **Dependencies fail to load:** Distribute `dotnet publish` output rather than only `dotnet build` output.
+- **ZIP imports but does not load:** Make sure `manifest.json` is at the root and `assembly` points to a real DLL inside the package.
+- **Source import fails:** Install the .NET 9 SDK and ensure the plugin project can be identified unambiguously.
+- **Native library fails to load:** Check `runtimes\win-x64\native` content and process architecture.
+- **Replacement still behaves like the old version:** Enable replacement during import and restart Weed.

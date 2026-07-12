@@ -1,502 +1,278 @@
-# 第一方插件规格
+# First-Party Plugin Specification
 
-> [返回开发文档索引](README.md)
+> [Back to Developer Documentation](README.md)
 
-## 概览
+## Overview
 
-当前第一方插件：
+Weed ships these built-in plugins:
 
-- AppLauncher
-- Calculator
-- Clipboard
-- Screenshot
-- Emoji Search
-- Translator
-- File Search
-- Run Command
+| Plugin | ID | Activation |
+| --- | --- | --- |
+| App Launcher | `weed.appLauncher` | ImplicitQuery |
+| Calculator | `weed.calculator` | ImplicitQuery |
+| Clipboard | `weed.clipboard` | `clip`, `Shift+Ctrl+C` |
+| Screenshot | `weed.screenshot` | `shot`, `Shift+Alt+A` |
+| Emoji Search | `weed.emoji` | `emoji` |
+| Translator | `weed.translate` | `tr`, `translate` |
+| File Search | `weed.fileSearch` | `file` |
+| Run Command | `weed.runCommand` | ImplicitQuery |
 
-第一方插件随 Weed 发布，默认启用，使用同一套 manifest、生命周期和结果模型。
+All built-ins use the public manifest, lifecycle, result, action, and settings models. `Weed.App` references and registers them directly rather than loading external package manifests.
 
-## AppLauncher
+## App Launcher
 
-### 入口
+### Scope
 
-```json
-{
-  "type": "implicitQuery",
-  "provider": "appLauncher"
-}
-```
+App Launcher indexes:
 
-### 范围
+- Current-user and all-user Start Menu shortcuts.
+- Classic and packaged applications exposed by `shell:AppsFolder`.
+- Relevant `.lnk` target metadata, working directory, arguments, and icons.
 
-AppLauncher 索引 Windows 开始菜单快捷方式与 `shell:AppsFolder` 中的应用。
+Maintenance and uninstall shortcuts are hidden by default. The plugin must not index arbitrary executable files from the full disk.
 
-索引路径：
+### Persistence
+
+The application index is stored in the plugin data directory as `app-launcher.db`. Extracted icons are stored in the plugin cache directory. Cached data is rebuildable and should never be treated as the source of truth.
+
+Startup loads the cache first for responsiveness, then refreshes from Shell sources. Manual refresh aliases include:
 
 ```text
-%ProgramData%\Microsoft\Windows\Start Menu\Programs
-%AppData%\Microsoft\Windows\Start Menu\Programs
+refresh apps
+refresh applications
+app refresh
+apps refresh
 ```
 
-### 数据模型
+### Matching
 
-```csharp
-public sealed record AppEntry
-{
-    public required string Id { get; init; }
-    public required string DisplayName { get; init; }
-    public string? TargetPath { get; init; }
-    public string? Arguments { get; init; }
-    public string? WorkingDirectory { get; init; }
-    public string? IconPath { get; init; }
-    public required string ShortcutPath { get; init; }
-    public DateTimeOffset IndexedAt { get; init; }
-}
-```
+Matching signals include:
 
-### 匹配
+- Exact and prefix display-name matches.
+- Token and substring matches.
+- English acronym matches.
+- Pinyin and pinyin-initial matches.
+- Subsequence fallback.
+- AppUserModelId fallback for packaged apps.
 
-AppLauncher 支持：
+Exact matches must remain above looser matches even when usage history favors another app.
 
-- 英文名称匹配。
-- 中文名称匹配。
-- 拼音匹配。
-- 拼音首字母匹配。
-- 缩写匹配。
-- 模糊匹配。
+### Actions
 
-### 动作
+- Open application.
+- Run a traditional desktop app as administrator.
+- Open the target location.
+- Copy target path or packaged app ID.
+- Refresh the index.
 
-- 打开应用。
-- 以管理员身份打开。
-- 打开所在位置。
-- 复制路径。
-
-默认动作是打开应用。
-
-### 索引策略
-
-- 启动时加载缓存。
-- 首次使用时刷新开始菜单索引。
-- 设置页提供手动刷新。
-- 快捷方式变更后的刷新策略在后续迭代中扩展。
+Packaged Windows apps do not expose the traditional run-as-administrator action.
 
 ## Calculator
 
-### 入口
+### Recognition
 
-```json
-{
-  "type": "implicitQuery",
-  "provider": "calculator"
-}
-```
+Calculator is an implicit provider and must reject normal words quickly. Expression-like inputs include numeric operators, parentheses, known functions, constants, and full-width equivalents.
 
-### 识别
+Normalization includes:
 
-Calculator 识别明确的数学表达式。
+- Full-width digits to ASCII.
+- Localized parentheses to `(` and `)`.
+- `×` to `*` and `÷` to `/`.
+- Normalized whitespace.
 
-示例：
+### Supported Expressions
 
 ```text
-1+2
-12 * 8
-sqrt(9)
+1+2*3
 (3+5)/2
+5!
+50%
+2^8
+sqrt(9)
+ln(e)
+log(100)
+log2(8)
 ```
 
-输入规范化：
+Supported features:
 
-- 全角数字转半角。
-- 中文括号转英文括号。
-- `×` 转 `*`。
-- `÷` 转 `/`。
-- 中文空格合并。
+- Addition, subtraction, multiplication, division, remainder, and exponentiation.
+- Parentheses and unary signs.
+- Factorials and postfix percentages.
+- `sqrt`, `abs`, `sin`, `cos`, `tan`, and `round`.
+- `ln`, base-10 `log`, and arbitrary-base `logN`.
+- Constants `pi` and `e`.
 
-### 结果
+Invalid syntax, invalid log bases, division errors, or non-finite results should fail without affecting other query providers.
 
-结果展示：
+### Results and Actions
 
-```text
-1 + 2 * 3 = 7
-```
+The result subtitle preserves enough of the expression to explain the answer. Output precision is bounded by the `decimalPrecision` plugin setting.
 
-默认动作：
-
-- 复制结果。
-
-可选动作：
-
-- 粘贴结果到前台窗口。
-- 复制完整表达式和结果。
-
-### 计算能力
-
-当前支持：
-
-- 加减乘除。
-- 括号。
-- 幂运算。
-- 百分号。
-- 常用函数：`sqrt`、`abs`、`sin`、`cos`、`tan`、`round`。
-- 对数函数：`ln`、`log` 和 `logN`。
-- 常量：`pi`、`e`。
-
-计算逻辑通过 `ICalculatorEngine` 适配器封装，便于替换表达式引擎。
+- Copy result.
+- Paste result into the foreground window.
+- Copy the complete equation and result.
 
 ## Clipboard
 
-### Manifest
+### Lifecycle
 
-```json
-{
-  "id": "weed.clipboard",
-  "runtime": {
-    "resident": true
-  },
-  "activations": [
-    {
-      "type": "keyword",
-      "keyword": "clip",
-      "command": "clipboard.search"
-    },
-    {
-      "type": "hotkey",
-      "command": "clipboard.show",
-      "defaultKeys": "Shift+Ctrl+C",
-      "configurable": true,
-      "behavior": "showPluginPanel"
-    }
-  ],
-  "permissions": [
-    "clipboard.read",
-    "clipboard.write",
-    "storage.local",
-    "window.paste"
-  ]
-}
-```
+Clipboard is resident. It starts a native clipboard listener and uses periodic polling as a fallback. Capture and persistence must not block the UI thread.
 
-### 生命周期
+Self-generated writes should be deduplicated so copy and paste actions do not create unnecessary duplicate history entries.
 
-Clipboard 是 resident 插件。启用后插件创建隐藏窗口并注册剪切板变化监听。
-
-核心流程：
+### Supported Content
 
 ```text
-StartAsync
-  -> Create hidden HWND
-  -> Register clipboard format listener
-  -> Receive clipboard update message
-  -> Queue async read
-  -> Normalize and hash content
-  -> Store metadata and searchable text
-  -> Store large objects separately
+text
+image
+files
+rtf
+html
 ```
 
-### 支持内容
+Metadata and searchable text are stored in `clipboard.db`. Large image and rich-text objects are stored as files under the plugin data directory.
 
-- 纯文本。
-- 图片。
-- 文件列表。
-- RTF 摘要。
-- HTML 摘要。
-
-### 查询
-
-入口：
+### Query
 
 ```text
-clip keyword
-Shift+Ctrl+C
+clip
+clip project plan
+clip type:text
+clip type:image
+clip type:files project
 ```
 
-搜索能力：
+Search combines SQLite FTS, normalized text, pinyin, pinyin initials, and subsequence matching. Pinned items rank before unpinned items, followed by match quality and recency.
 
-- 全文搜索。
-- 拼音搜索。
-- 模糊搜索。
-- 类型过滤。
-- 最近记录排序。
-- 置顶记录排序。
+### Actions
 
-### 动作
+- Copy entry to the clipboard.
+- Copy and paste into the foreground window.
+- Open an image, file, or rich-content preview/location.
+- Pin or unpin.
+- Delete.
 
-- 复制到剪切板。
-- 粘贴到前台窗口。
-- 删除记录。
-- 置顶或取消置顶。
-- 打开图片预览。
-- 打开文件所在位置。
+### Retention
 
-### 保留策略
+Settings include:
 
-默认保留：
+- `captureImages`
+- `captureFileLists`
+- `retentionDays`
+- `maxItems`
+- `resultLimit`
+- `maxObjectMegabytes`
 
-```text
-100,000 条记录或 180 天
-```
-
-达到任一条件后执行清理。图片和大对象使用独立空间配额，用户可在设置页调整。
+Cleanup must preserve pinned entries where possible, remove unreferenced objects, and enforce age, record count, and object quota independently.
 
 ## Screenshot
 
-### Manifest
-
-```json
-{
-  "id": "weed.screenshot",
-  "activations": [
-    {
-      "type": "hotkey",
-      "command": "screenshot.region",
-      "defaultKeys": "Shift+Alt+A",
-      "configurable": true,
-      "behavior": "executeCommand"
-    },
-    {
-      "type": "keyword",
-      "keyword": "shot",
-      "command": "screenshot.open"
-    }
-  ],
-  "permissions": [
-    "screen.capture",
-    "clipboard.write",
-    "file.write"
-  ]
-}
-```
-
-### 区域截图
-
-流程：
+### Activation
 
 ```text
-Hotkey
-  -> Show overlay
-  -> Select region
-  -> Capture bitmap
-  -> Open editor
-  -> Annotate
-  -> Copy or save
+shot
+Shift+Alt+A
 ```
 
-区域选择 UI：
+The keyword returns region, primary-screen, and scrolling-area actions. The hotkey executes region capture directly.
 
-- 多显示器覆盖。
-- 十字光标。
-- 选择框。
-- 像素尺寸提示。
-- 放大镜辅助。
+### Region Capture
 
-### 标注
+The platform layer displays a multi-monitor overlay, tracks drag bounds in virtual-screen coordinates, and shows size and magnifier feedback. Cancellation returns cleanly without creating output.
 
-编辑器支持：
+After selection, the editor provides:
 
-- 画笔。
-- 矩形框。
-- 圆形或椭圆。
-- 颜色选择。
-- 线宽选择。
-- 撤销。
-- 重做。
-- 清空标注。
+- Pen, rectangle, and ellipse annotations.
+- Color and line-width selection.
+- Undo, redo, and clear.
+- Copy to clipboard.
+- Save as PNG or JPEG.
 
-输出动作：
+### Primary and Scrolling Capture
 
-- 复制图片。
-- 保存图片。
-- 另存为。
-- 返回重新选择区域。
+Primary capture records the primary display and opens the shared output workflow. Scrolling capture selects an area, captures multiple frames, reports progress, supports cancellation, and stitches content into a single image before editing.
 
-### 滚动截图
+Scrolling capture must bound runtime, output size, and duplicate-frame handling. Failure should preserve any recoverable image and show a diagnostic rather than silently closing.
 
-滚动截图通过截图插件 UI 进入。用户选择目标窗口或滚动区域后，Weed 捕获多个滚动位置的画面并拼接为长图。
+### Settings
 
-流程：
-
-```text
-Open screenshot tool
-  -> Choose scrolling capture
-  -> Select target window or region
-  -> Start capture
-  -> Scroll and capture frames
-  -> Stitch bitmap
-  -> Open editor
-  -> Annotate
-  -> Copy or save
-```
-
-滚动截图 UI：
-
-- 目标窗口高亮。
-- 捕获区域确认。
-- 进度展示。
-- 停止按钮。
-- 拼接预览。
-- 编辑器入口。
-
-保存格式：
-
-- PNG。
-- JPEG。
-
-默认保存格式为 PNG。
+- `defaultSaveDirectory`
+- `defaultFormat`
+- `jpegQuality`
+- `maxSavedFileMegabytes`
+- `defaultColor`
+- `defaultLineWidth`
 
 ## Emoji Search
 
-Emoji Search 用于快速搜索并复制内置 emoji。
+### Data
 
-### Manifest
+Emoji Search loads the embedded `emoji-test.txt` dataset and falls back to a small built-in set if the resource is unavailable.
 
-```json
-{
-  "id": "weed.emoji",
-  "activations": [
-    {
-      "type": "keyword",
-      "keyword": "emoji",
-      "command": "emoji.search"
-    }
-  ],
-  "permissions": [
-    "clipboard.write"
-  ]
-}
-```
-
-### 查询
-
-入口：
+### Query
 
 ```text
+emoji
 emoji smile
 emoji rocket
-emoji heart
+emoji :heart:
 ```
 
-搜索能力：
+Matching covers names, shortcodes, aliases, categories, and subcategories. An empty query returns a bounded default list. Common user terms may map to aliases such as `love` for heart-related emoji.
 
-- 名称匹配。
-- 别名匹配。
-- 分类匹配。
-- shortcode 匹配。
-- 常用 emoji 排序。
+### Actions and Settings
 
-### 动作
+- Copy emoji character.
+- Copy `:shortcode:`.
+- Copy English name.
 
-- 复制 emoji。
-- 复制 shortcode。
-- 复制 emoji 名称。
-
-默认动作是复制 emoji 到剪切板。
+`maxResults` bounds output. `copyFormat` selects the default action format from Emoji, Shortcode, or Name.
 
 ## Translator
 
-Translator 用于通过免费或免费额度翻译接口进行快速翻译。
-
-### Manifest
-
-```json
-{
-  "id": "weed.translate",
-  "activations": [
-    {
-      "type": "keyword",
-      "keyword": "tr",
-      "command": "translate.search"
-    },
-    {
-      "type": "keyword",
-      "keyword": "translate",
-      "command": "translate.search"
-    }
-  ],
-  "permissions": [
-    "network",
-    "clipboard.write"
-  ]
-}
-```
-
-### 查询
-
-入口：
+### Query Syntax
 
 ```text
 tr hello
-tr en zh hello
-translate auto en 你好
-translate ja zh ありがとう
+tr en zh-CN hello
+translate auto en hello
 ```
 
-语法：
+- `tr text` uses configured defaults.
+- `tr source target text` specifies both languages for the current query.
+- `auto` asks the provider to detect the source language.
 
-- `tr text`: 使用默认源语言和目标语言，源语言默认自动检测。
-- `tr source target text`: 指定源语言和目标语言。
-- `translate source target text`: 完整命令别名。
+If detected input already uses the default target language, the plugin can switch to `secondaryTargetLanguage` for unlabeled queries.
 
-### Provider
+### Providers
 
-插件优先支持免费或免费额度 provider：
+- Google Translate through the configured Google base URL.
+- Baidu Translate with App ID and secret key.
 
-- Google Translate。
-- Baidu Translate（百度翻译）。
+Network calls honor query cancellation and `queryDelayMilliseconds` to avoid a request for every keystroke. Proxy mode can be `system`, `none`, or `custom`.
 
-Provider 应可在设置页切换。需要凭据的 provider 通过插件设置保存 API 配置；无需凭据或用户自配端点的 provider 也应支持 base URL 配置。
+Failures return a diagnostic result and scoped log entry. Logs must not include secrets or full sensitive translation text.
 
-### 网络和代理
+### Actions and Settings
 
-Translator 支持代理配置：
+- Copy translation.
+- Copy source and translation.
+- Swap explicit source and target languages and reopen the query.
 
-- `system`: 使用系统代理。
-- `none`: 不使用代理。
-- `custom`: 使用用户配置的代理地址。
-
-请求失败、接口限额、provider 不可用或代理错误时，结果列表展示可执行的错误结果，并在插件日志中记录原因。
-
-### 动作
-
-- 复制译文。
-- 复制原文和译文。
-- 交换源语言和目标语言后重新翻译。
-
-默认动作是复制译文到剪切板。
+Settings include provider, source and target languages, secondary target, query delay, service URLs, Baidu credentials, proxy mode, and proxy URL.
 
 ## File Search
 
-File Search 用于通过 Everything 的本地索引快速搜索文件和文件夹。Weed 不自行递归扫描文件系统。
+### Dependency
 
-### Manifest
+File Search uses the Everything SDK and an existing Everything index. Weed does not recursively index the filesystem.
 
-```json
-{
-  "id": "weed.fileSearch",
-  "activations": [
-    {
-      "type": "keyword",
-      "keyword": "file",
-      "command": "file.search"
-    }
-  ],
-  "permissions": [
-    "file.read",
-    "shell.launch"
-  ]
-}
-```
+The plugin declares Everything as an external dependency. On startup, the Host checks IPC readiness and may start an installed Everything executable. Weed does not install Everything or change its startup configuration.
 
-### 依赖
+Both `Everything64.dll` and `Everything32.dll` are distributed with the plugin, and the runtime selects the correct architecture.
 
-File Search 依赖 Everything 已安装并正在运行。插件通过 Everything SDK 查询现有索引，不建立 Weed 自有文件索引，也不要求用户输入 Everything 可执行文件路径。
-
-当 Everything 未安装、服务未运行或 API 不可用时，插件返回诊断结果，引导用户打开 Everything 或查看设置。
-
-### 查询
-
-入口：
+### Query
 
 ```text
 file report
@@ -504,30 +280,47 @@ file *.pdf invoice
 file path:projects weed
 ```
 
-搜索能力：
+The query is forwarded to Everything. When `includeFolders` is false, a file-only filter is added. Results preserve full paths and map Everything order into descending Weed match scores.
 
-- 文件名搜索。
-- 文件夹搜索。
-- Everything 查询语法透传。
-- 文件和文件夹类型过滤。
-- Everything SDK 排序设置，包括名称、路径、大小、扩展名、日期、属性、运行次数等升序/降序排序。
+### Actions and Settings
 
-### 动作
+- Open file or folder.
+- Open containing location.
+- Copy full path.
 
-- 打开文件或文件夹。
-- 打开所在位置。
-- 复制路径。
-
-默认动作是打开选中项。
+Settings include `includeFolders`, `maxResults`, and Everything SDK sort order. Missing installation, unavailable IPC, invalid syntax, and SDK errors return diagnostic results.
 
 ## Run Command
 
-Run Command 是 implicit query 插件，用于启动白名单中的常用 Windows 系统工具，不执行任意用户输入。
+Run Command is an implicit provider that opens only a fixed allowlist of Windows tools. It never passes arbitrary user input to a command shell.
 
-### 查询
+Current aliases include:
 
-插件按命令别名与显示名称进行精确、前缀和包含匹配，最多返回 8 条结果。当前命令表包括 `cmd`、`regedit`、`taskmgr`、`services.msc`、`devmgmt.msc`、`diskmgmt.msc`、`control`、`appwiz.cpl`、`ncpa.cpl`、`sysdm.cpl`、`mstsc`、`notepad`、`calc` 和 `explorer`。
+```text
+cmd
+regedit
+taskmgr
+services.msc
+devmgmt.msc
+diskmgmt.msc
+control
+appwiz.cpl
+ncpa.cpl
+sysdm.cpl
+mstsc
+notepad
+calc
+explorer
+```
 
-### 动作
+Matching uses exact, prefix, and substring checks against aliases and display names, returning at most eight results. The only action opens the selected allowlisted target through Shell execution.
 
-默认且唯一的结果动作是通过 Shell 打开对应系统命令。
+## Cross-Plugin Requirements
+
+- Plugin IDs, result IDs, and command IDs remain stable across compatible releases.
+- Query results are bounded and cancellation-aware.
+- User-visible failures return useful diagnostics and write scoped logs.
+- Settings definitions include clear labels, defaults, valid ranges, and choices.
+- Plugins use Host storage, clipboard, Shell, screen capture, and logging services rather than Host implementation classes.
+- Sensitive content and credentials are not written to logs.
+- Every user-visible behavior change updates the built-in plugin guide and changelog.

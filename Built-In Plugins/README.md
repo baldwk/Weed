@@ -1,21 +1,21 @@
-# Weed 内置插件指南
+# Weed Built-In Plugin Guide
 
-Weed 默认提供 8 个内置插件。你可以在 **Settings > Plugins** 中启用或禁用插件、调整无前缀搜索优先级，并修改插件专属设置。
+Weed includes eight built-in plugins. Use **Settings > Plugins** to enable or disable them, adjust implicit-query priority, and edit plugin-specific settings.
 
-| 插件 | 输入方式 | 用途 |
+| Plugin | Entry | Purpose |
 | --- | --- | --- |
-| App Launcher | 直接输入应用名 | 搜索并启动应用 |
-| Calculator | 直接输入表达式 | 计算并复制或粘贴结果 |
-| Clipboard | `clip`、`Shift+Ctrl+C` | 搜索与使用剪切板历史 |
-| Screenshot | `shot`、`Shift+Alt+A` | 区域、主屏与滚动截图 |
-| Emoji Search | `emoji` | 搜索并复制 emoji |
-| Translator | `tr`、`translate` | 快速翻译文本 |
-| File Search | `file` | 通过 Everything 搜索文件 |
-| Run Command | 直接输入命令名 | 打开常用 Windows 工具 |
+| App Launcher | Enter an app name directly | Find and launch applications |
+| Calculator | Enter an expression directly | Calculate, copy, or paste a result |
+| Clipboard | `clip`, `Shift+Ctrl+C` | Search and reuse clipboard history |
+| Screenshot | `shot`, `Shift+Alt+A` | Capture a region, screen, or scrolling area |
+| Emoji Search | `emoji` | Find and copy emoji |
+| Translator | `tr`, `translate` | Translate text quickly |
+| File Search | `file` | Search files through Everything |
+| Run Command | Enter a command name directly | Open common Windows tools |
 
 ## App Launcher
 
-直接输入应用名称即可搜索开始菜单和 Windows 打包应用。搜索支持名称、拼音、拼音首字母与常见英文缩写。
+Enter an application name to search Start Menu shortcuts and packaged Windows apps. Matching supports display names, pinyin, pinyin initials, and common English acronyms.
 
 ```text
 Visual Studio Code
@@ -23,13 +23,13 @@ weixin
 wx
 ```
 
-可用操作包括打开应用、以管理员身份运行、打开所在位置，以及复制路径或应用 ID。输入 `refresh apps` 可手动刷新应用列表。
+Actions include open, run as administrator, open location, and copy path or app ID. Enter `refresh apps` to rebuild the application list manually.
 
-在插件设置中可选择是否隐藏卸载程序和维护工具等低频快捷方式。
+The plugin setting can hide low-value uninstall and maintenance shortcuts.
 
 ## Calculator
 
-直接输入数学表达式即可看到结果，无需关键词。
+Enter a mathematical expression directly; no keyword is required.
 
 ```text
 1+2*3
@@ -42,20 +42,20 @@ log(100)
 log2(8)
 ```
 
-支持：
+Supported features:
 
-- `+`、`-`、`*`、`/`、`%`、`^`、`**` 与括号。
-- 阶乘和后缀百分号。
-- `sqrt`、`abs`、`sin`、`cos`、`tan`、`round`。
-- 自然对数 `ln`、常用对数 `log`，以及 `logN` 形式的任意底数对数。
-- 常量 `pi` 和 `e`。
-- 全角数字、中文括号、`×` 和 `÷` 等常见输入形式。
+- `+`, `-`, `*`, `/`, `%`, `^`, `**`, and parentheses.
+- Factorials and postfix percentages.
+- `sqrt`, `abs`, `sin`, `cos`, `tan`, and `round`.
+- Natural log `ln`, base-10 log `log`, and arbitrary-base `logN` functions.
+- Constants `pi` and `e`.
+- Common full-width input forms, including full-width digits, localized parentheses, `×`, and `÷`.
 
-默认操作为复制结果；还可直接粘贴到前台窗口，或复制完整算式与结果。小数精度可在插件设置中调整。
+The default action copies the result. Other actions paste it into the foreground window or copy the complete equation. Decimal precision is configurable.
 
 ## Clipboard
 
-Clipboard 会在启用后记录剪切板历史。输入 `clip` 浏览最近内容，继续输入关键词即可搜索。
+Clipboard records history while the plugin is enabled. Enter `clip` to browse recent content or append a query to search.
 
 ```text
 clip meeting
@@ -64,34 +64,34 @@ clip type:image
 clip type:files project
 ```
 
-支持文本、图片、文件列表、HTML 和 RTF。搜索支持普通关键词、拼音、拼音首字母和类型筛选。
+It supports text, images, file lists, HTML, and RTF. Search supports regular terms, pinyin, pinyin initials, and type filters.
 
-常用操作：
+Available actions:
 
-- 复制历史项，或直接粘贴到前台窗口。
-- 打开图片、文件或富文本的预览与所在位置。
-- 置顶常用内容。
-- 删除不再需要的记录。
+- Copy an entry or paste it into the foreground window.
+- Open a preview or location for images, files, and rich content.
+- Pin frequently used content.
+- Delete an entry.
 
-可在插件设置中控制是否记录图片与文件列表、保留天数、最大记录数、返回结果数和对象存储上限。剪切板内容保存在本机；退出 Weed 不会自动清空历史。
+Settings control image and file-list capture, retention days, maximum records, result count, and object storage quota. Clipboard data stays on the local machine and is not cleared automatically when Weed exits.
 
 ## Screenshot
 
-输入 `shot`，或按 `Shift+Alt+A` 开始区域截图。
+Enter `shot` or press `Shift+Alt+A` to start a region capture.
 
-截图模式：
+Capture modes:
 
-- **Capture region**：拖动选择区域。
-- **Capture primary screen**：截取主屏幕。
-- **Capture scrolling area**：选择滚动区域并拼接成长图。
+- **Capture region:** Drag to select an area.
+- **Capture primary screen:** Capture the primary display.
+- **Capture scrolling area:** Select a scrolling area and stitch it into one image.
 
-区域截图后可使用画笔、矩形、椭圆、颜色、线宽、撤销、重做和清除等标注工具，然后复制到剪切板或保存为 PNG/JPEG。
+After a region capture, use the pen, rectangle, ellipse, color, line width, undo, redo, and clear controls. Copy the result or save it as PNG or JPEG.
 
-插件设置可调整默认保存目录、格式、JPEG 质量、最大文件大小、标注颜色和线宽。
+Settings control the save directory, format, JPEG quality, maximum file size, annotation color, and line width.
 
 ## Emoji Search
 
-输入 `emoji` 后按英文名称、别名、分类或 shortcode 搜索。
+Enter `emoji`, then search by English name, alias, category, or shortcode.
 
 ```text
 emoji smile
@@ -99,29 +99,29 @@ emoji rocket
 emoji :heart:
 ```
 
-默认操作为复制 emoji 字符，也可以复制 `:shortcode:` 或英文名称。插件设置可修改最大结果数和默认复制格式。
+The default action copies the emoji. Other actions copy its `:shortcode:` or English name. Settings control the maximum results and default copy format.
 
 ## Translator
 
-使用 `tr` 或 `translate` 翻译文本。
+Use `tr` or `translate` to translate text.
 
 ```text
 tr hello
 tr en zh-CN hello
-translate auto en 你好
-translate ja zh-CN ありがとう
+translate auto en hello
+translate ja zh-CN arigatou
 ```
 
-- `tr text`：使用插件中设置的默认源语言和目标语言。
-- `tr source target text`：临时指定源语言与目标语言。
+- `tr text` uses the configured source and target languages.
+- `tr source target text` temporarily specifies both languages.
 
-支持 Google Translate 与百度翻译。Google 可直接使用；百度翻译需要配置 App ID 和 Secret Key。默认操作为复制译文，也可以复制原文与译文，或交换语言后重新查询。
+Google Translate and Baidu Translate are supported. Google works without credentials; Baidu requires an App ID and secret key. The default action copies the translation. Other actions copy source and translated text together or swap languages and run the query again.
 
-插件设置还可配置默认语言、第二目标语言、查询延迟、服务地址以及系统/无/自定义代理。翻译内容会发送到所选服务，请勿提交不希望第三方服务处理的敏感文本。
+Settings include provider, default languages, secondary target language, query delay, service URLs, and system/no/custom proxy modes. Translation text is sent to the selected provider, so do not submit sensitive content you do not want that service to process.
 
 ## File Search
 
-File Search 使用 Everything 的本地索引。使用前请先安装 [Everything](https://www.voidtools.com/)。
+File Search uses the local Everything index. Install [Everything](https://www.voidtools.com/) before using it.
 
 ```text
 file report
@@ -129,13 +129,13 @@ file *.pdf invoice
 file path:projects weed
 ```
 
-查询支持 Everything 搜索语法。可用操作包括打开文件或文件夹、打开所在位置和复制完整路径。
+Queries support Everything search syntax. Actions include open, open location, and copy full path.
 
-插件设置可控制是否显示文件夹、最大结果数和排序方式。Weed 会在需要时尝试启动已经安装的 Everything，但不会安装 Everything，也不会修改它的开机启动设置。
+Settings control whether folders are included, the maximum results, and Everything sort order. Weed can attempt to start an installed Everything instance, but it does not install Everything or alter its startup settings.
 
 ## Run Command
 
-直接输入常见 Windows 命令或工具名称。该插件只打开内置列表中的命令，不会执行任意输入。
+Enter a supported Windows command or tool name directly. This plugin opens only its built-in allowlist and never executes arbitrary input.
 
 ```text
 cmd
@@ -154,10 +154,10 @@ calc
 explorer
 ```
 
-输入完整命令通常排在最前，也可以按显示名称进行搜索。按 `Enter` 打开所选工具。
+Exact command matches rank first, and display-name search is also supported. Press `Enter` to open the selected tool.
 
-## 相关文档
+## Related Documentation
 
-- [Weed 使用指南](../docs/user-guide.md)
-- [外部 OCR 插件](../External%20Plugins/Weed.Plugins.Ocr/README.md)
-- [第一方插件技术规格](../docs/dev/05-first-party-plugins.md)
+- [Weed User Guide](../docs/user-guide.md)
+- [OCR External Plugin](../External%20Plugins/Weed.Plugins.Ocr/README.md)
+- [First-Party Plugin Technical Specification](../docs/dev/05-first-party-plugins.md)

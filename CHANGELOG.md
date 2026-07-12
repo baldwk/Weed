@@ -1,5 +1,9 @@
 # Changelog
 
+## Pre-release
+
+- Converted the complete user, plugin, template, and developer documentation set to English.
+
 ## 0.1.5
 
 - Reworked the main README around product capabilities, installation, everyday usage, screenshots, and user-facing plugin discovery.

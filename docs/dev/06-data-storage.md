@@ -1,10 +1,10 @@
-# 数据与存储
+# Data and Storage
 
-> [返回开发文档索引](README.md)
+> [Back to Developer Documentation](README.md)
 
-## 存储根目录
+## Storage Roots
 
-Weed 将可漫游的用户配置和本机数据分开保存：
+Weed separates roaming configuration from machine-local data:
 
 ```text
 %APPDATA%\Weed\
@@ -23,13 +23,13 @@ Weed 将可漫游的用户配置和本机数据分开保存：
   updates\
 ```
 
-默认截图目录为 `%USERPROFILE%\Pictures\Weed`。`clipboard-objects` 是 Host 预留路径；当前 Clipboard 插件的大对象位于自己的 `plugins-data\weed.clipboard\objects` 目录。
+Screenshots default to `%USERPROFILE%\Pictures\Weed`. `clipboard-objects` is a Host-reserved path; the current Clipboard plugin stores large objects under `plugins-data\weed.clipboard\objects`.
 
-## 全局配置
+## Global Configuration
 
 ### settings.json
 
-保存应用级设置：
+Stores application settings:
 
 ```json
 {
@@ -46,7 +46,7 @@ Weed 将可漫游的用户配置和本机数据分开保存：
 
 ### hotkeys.json
 
-以 `<pluginId>:<command>` 为键保存插件热键覆盖：
+Stores plugin hotkey overrides keyed by `<pluginId>:<command>`:
 
 ```json
 {
@@ -63,7 +63,7 @@ Weed 将可漫游的用户配置和本机数据分开保存：
 
 ### plugins.json
 
-保存插件启用状态与 ImplicitQuery 优先级：
+Stores plugin enablement and ImplicitQuery priority:
 
 ```json
 {
@@ -74,17 +74,17 @@ Weed 将可漫游的用户配置和本机数据分开保存：
 }
 ```
 
-`priority` 被限制在 `0` 到 `100`，只参与无前缀查询排序。
+`priority` is clamped from `0` to `100` and affects only implicit-query ranking.
 
 ### plugin-settings\<pluginId>.json
 
-每个插件使用独立 JSON 文件保存自身设置。Host 根据 `IPluginSettingsProvider` 返回的定义渲染和持久化字段，不解释具体业务含义。
+Each plugin stores its settings in a separate JSON file. The Host renders and persists fields defined by `IPluginSettingsProvider` without interpreting their business meaning.
 
-包含密钥的插件设置当前仍以明文 JSON 保存在用户配置目录。日志不得输出凭据；未来引入凭据库时应保留设置键兼容性并提供迁移。
+Secrets are currently stored as plain JSON in the user configuration directory. Logs must never include credentials. A future credential-store migration should preserve setting-key compatibility.
 
-## Core 数据库
+## Core Database
 
-`%LOCALAPPDATA%\Weed\weed.db` 保存使用历史与 schema migration。当前核心表：
+`%LOCALAPPDATA%\Weed\weed.db` stores usage history and schema migrations. The main history table is:
 
 ```sql
 CREATE TABLE usage_history (
@@ -97,47 +97,47 @@ CREATE TABLE usage_history (
 );
 ```
 
-每次成功执行结果后更新选择次数与时间，查询排序时映射为 UsageScore。
+Successful result execution updates selection count and time, which are mapped into UsageScore during ranking.
 
-## 插件数据
+## Plugin Data
 
-插件通过 Host 获取两个隔离目录：
+Plugins receive separate data and cache directories from the Host:
 
 ```text
 %LOCALAPPDATA%\Weed\plugins-data\<pluginId>
 %LOCALAPPDATA%\Weed\cache\<pluginId>
 ```
 
-- App Launcher 将可重建索引保存在 `plugins-data\weed.appLauncher\app-launcher.db`，图标缓存在 `cache\weed.appLauncher\icons`。
-- Clipboard 将元数据与 FTS 索引保存在 `plugins-data\weed.clipboard\clipboard.db`，图片、HTML 和 RTF 等对象保存在同目录下的 `objects`。
-- OCR 将区域截图与文本结果保存在 `plugins-data\weed.ocr`。
+- App Launcher stores its rebuildable index in `plugins-data\weed.appLauncher\app-launcher.db` and icons in `cache\weed.appLauncher\icons`.
+- Clipboard stores metadata and its FTS index in `plugins-data\weed.clipboard\clipboard.db`; image, HTML, and RTF objects live under `objects` in the same plugin directory.
+- OCR stores captures and text results in `plugins-data\weed.ocr`.
 
-插件 ID 在生成目录名时会替换 Windows 不允许的文件名字符。
+Invalid Windows filename characters in plugin IDs are replaced when directory names are generated.
 
-## Clipboard 保留策略
+## Clipboard Retention
 
-Clipboard 默认保留 180 天、最多 100,000 条记录，大对象总量上限为 2,048 MB。置顶项优先保留；删除或清理记录时，应同步删除不再引用的对象文件。
+Clipboard defaults to 180 days, 100,000 records, and a 2,048 MB object quota. Pinned items have retention priority. Deleting or pruning a record must also remove unreferenced object files.
 
-可存储的内容类型包括 `text`、`image`、`files`、`rtf` 和 `html`。数据库保存可搜索文本、内容 hash、对象路径、时间、置顶状态和大小等元数据，原始大对象不直接写入主表。
+Supported content types are `text`, `image`, `files`, `rtf`, and `html`. The database stores searchable text, hashes, paths, timestamps, pinned state, and size metadata; large raw objects stay outside the primary table.
 
-## 截图输出
+## Screenshot Output
 
-截图默认保存到 `%USERPROFILE%\Pictures\Weed`，也可由 `defaultSaveDirectory` 覆盖。文件名使用 `Screenshot-{yyyyMMdd-HHmmss}` 形式，扩展名由 PNG/JPEG 设置决定。
+Screenshots default to `%USERPROFILE%\Pictures\Weed`, overridden by `defaultSaveDirectory`. Filenames use `Screenshot-{yyyyMMdd-HHmmss}` with an extension selected from PNG or JPEG settings.
 
-截图插件还持久化 JPEG 质量、最大保存文件大小、默认标注颜色和线宽。截图编辑中的临时状态只存在于当前会话。
+The plugin also persists JPEG quality, maximum saved file size, default annotation color, and line width. Editor state is session-only.
 
-## 外部插件与更新
+## External Plugins and Updates
 
-- 外部插件安装目录：`%LOCALAPPDATA%\Weed\plugins\<manifest.id>`。
-- 更新下载目录：`%LOCALAPPDATA%\Weed\updates`。
-- 覆盖或删除应用程序目录不会自动删除上述用户数据。
+- External plugin directory: `%LOCALAPPDATA%\Weed\plugins\<manifest.id>`.
+- Update download directory: `%LOCALAPPDATA%\Weed\updates`.
+- Replacing or deleting the application directory does not remove this user data.
 
-导入器必须验证 manifest 与程序集路径均位于插件包内，避免通过相对路径写入目标目录之外。
+The importer must keep manifest and assembly paths inside the plugin package to prevent path traversal outside the installation root.
 
-## 迁移与清理
+## Migration and Cleanup
 
-- SQLite 数据库使用 `schema_migrations` 记录已应用版本，迁移必须按序且可诊断。
-- 配置写入先生成 `.tmp` 文件，再原子替换目标文件。
-- 插件负责清理自己的过期记录、对象和缓存；Core 不应猜测插件数据格式。
-- 日志、更新包和可重建缓存应提供独立清理策略，不得连带删除用户配置或已导入插件。
-- 破坏性 schema 或目录调整必须提供从上一正式版本升级的迁移与回滚说明。
+- SQLite databases record applied versions in `schema_migrations`; migrations must run in order and remain diagnosable.
+- Configuration writes use a `.tmp` file followed by atomic replacement.
+- Plugins own cleanup of their expired data, objects, and caches. Core must not guess plugin data formats.
+- Logs, downloaded updates, and rebuildable caches need independent cleanup policies that never remove user settings or installed plugins.
+- Breaking schema or directory changes require a migration and rollback path from the previous stable release.

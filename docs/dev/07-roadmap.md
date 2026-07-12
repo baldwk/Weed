@@ -1,70 +1,68 @@
-# 路线图与验收项
+# Roadmap and Release Acceptance
 
-> [返回开发文档索引](README.md)
+> [Back to Developer Documentation](README.md)
 
-本页记录当前版本之后的维护方向与每次发布应满足的验收要求。已经完成的阶段性实现不再作为待办清单保留；历史变更以 [`CHANGELOG.md`](../../CHANGELOG.md) 和 Git 提交为准。
+This page tracks maintenance directions and the acceptance requirements for future releases. Completed implementation phases belong in [`CHANGELOG.md`](../../CHANGELOG.md) and Git history rather than an open task list.
 
-## 近期方向
+## Near-Term Directions
 
-### 分发体验
+### Distribution
 
-- 提供更清晰的安装、升级和卸载流程。
-- 评估自包含包、安装器与代码签名，降低首次使用门槛。
-- 在应用内完成更新包替换，并提供失败回滚与明确状态。
+- Provide clearer installation, upgrade, and uninstall workflows.
+- Evaluate self-contained packages, an installer, and code signing.
+- Complete in-app package replacement with failure recovery and explicit status.
 
-### 插件生态
+### Plugin Ecosystem
 
-- 稳定 `Weed.Abstractions` 的版本兼容规则。
-- 为外部插件提供独立包引用与示例仓库。
-- 完善插件来源、版本、校验和与升级提示。
-- 评估更强的进程隔离与权限约束，减少不受信任插件的影响范围。
+- Stabilize compatibility rules for `Weed.Abstractions`.
+- Publish a standalone SDK package and example plugin repository.
+- Improve plugin source, version, checksum, and upgrade information.
+- Evaluate process isolation and stronger capability enforcement for untrusted plugins.
 
-### 搜索与交互
+### Search and Interaction
 
-- 继续校准跨插件排序、使用历史权重和精确匹配优先级。
-- 扩展无障碍、键盘操作和多显示器/DPI 场景验证。
-- 为耗时查询提供更一致的加载、取消、错误与重试反馈。
+- Continue tuning cross-plugin ranking, usage history weight, and exact-match priority.
+- Expand accessibility, keyboard, multi-monitor, and DPI testing.
+- Standardize loading, cancellation, error, and retry feedback for expensive queries.
 
-### 第一方能力
+### First-Party Features
 
-- 改进 App Launcher 的应用发现与索引刷新。
-- 提升 Clipboard 大对象治理、搜索质量与隐私控制。
-- 提升滚动截图在不同应用和缩放比例下的稳定性。
-- 完善 Translator、File Search 与 OCR 的依赖诊断。
+- Improve application discovery and App Launcher index refresh.
+- Improve Clipboard object retention, search quality, and privacy controls.
+- Improve scrolling capture across applications and display scales.
+- Improve dependency diagnostics for Translator, File Search, and OCR.
 
-## 版本验收
+## Release Acceptance
 
-每次正式发布前至少完成以下检查：
+### Build and Test
 
-### 构建与测试
+- `dotnet build Weed.sln --configuration Release` succeeds.
+- `dotnet run --configuration Release --project Weed.SmokeTests\Weed.SmokeTests.csproj` passes.
+- The `win-x64` package launches after extraction into a clean directory.
+- Update manifest version, package URL, and SHA256 match the release assets.
 
-- `dotnet build Weed.sln --configuration Release` 成功。
-- `dotnet run --configuration Release --project Weed.SmokeTests\Weed.SmokeTests.csproj` 通过。
-- `win-x64` 发布包可在干净目录中解压并启动。
-- 更新清单版本、下载地址和 SHA256 与发布资产一致。
+### Core Workflows
 
-### 核心流程
+- A repeated launch activates the existing Weed process.
+- `Alt+Space`, tray access, theme switching, and launch-at-startup settings work.
+- App search, calculator, clipboard, screenshots, translation, file search, emoji, and system commands each pass one primary workflow test.
+- External plugin import, restart loading, disablement, and log diagnostics work.
+- Missing Everything, offline translation, missing OCR models, and similar dependency failures show actionable diagnostics.
 
-- 重复启动只激活现有 Weed 实例。
-- `Alt+Space`、托盘入口、主题切换和开机启动设置正常。
-- 应用搜索、计算器、剪切板、截图、翻译、文件搜索、Emoji 与系统命令各完成一次主流程验证。
-- 外部插件导入、重启加载、禁用和日志诊断正常。
-- Everything 未安装、网络不可用、模型缺失等依赖异常能显示可理解的诊断信息。
+### Data and Compatibility
 
-### 数据与兼容性
+- Upgrading over the previous stable release preserves settings, hotkeys, plugin state, and history.
+- Cleanup policies do not remove pinned clipboard entries or user-selected files accidentally.
+- Logs do not contain unnecessary clipboard content, translation text, secrets, or other sensitive data.
 
-- 从上一正式版本覆盖升级后，设置、快捷键、插件启用状态和历史数据仍可读取。
-- 清理或保留策略不会误删置顶剪切板记录和用户选择的文件。
-- 日志中不包含不必要的剪切板正文、翻译正文、密钥或其他敏感数据。
+### Documentation and Release
 
-### 文档与发布
+- The root README and User Guide contain only user-visible features, installation, and usage.
+- Implementation, build, plugin development, and release guidance stays under `docs/dev/`.
+- Built-in plugin, OCR plugin, and template documentation matches current behavior.
+- `CHANGELOG.md`, project version, Git tag, and Release title agree.
+- GitHub Release contains `Weed-win-x64.zip` and `Weed-win-x64.update.json` and is marked as the latest stable version.
 
-- 根 README 和使用指南只描述用户可见功能、安装与使用。
-- 技术实现、构建、插件开发与发布说明位于 `docs/dev/`。
-- 内置插件、OCR 插件和插件模板文档与行为一致。
-- `CHANGELOG.md` 包含新版本条目，项目版本、Git 标签和 Release 标题一致。
-- GitHub Release 包含 `Weed-win-x64.zip` 与 `Weed-win-x64.update.json`，并标记为最新正式版。
+## Definition of Done
 
-## 完成标准
-
-功能只有在实现、错误处理、必要测试、用户文档、开发文档和变更记录同步完成后，才视为可发布。影响持久化数据或插件契约的变更还必须提供兼容或迁移说明。
+A feature is releasable only when implementation, error handling, necessary tests, user documentation, developer documentation, and changelog entries are complete. Changes to persisted data or plugin contracts also require compatibility or migration notes.

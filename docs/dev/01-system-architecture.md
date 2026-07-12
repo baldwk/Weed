@@ -1,144 +1,149 @@
-# 系统架构
+# System Architecture
 
-> [返回开发文档索引](README.md)
+> [Back to Developer Documentation](README.md)
 
-## 总体结构
+## Solution Structure
 
 ```text
 Weed.App
-  WPF 主窗口、托盘、设置页、主题、输入和结果渲染
+  WPF launcher, tray integration, settings, theme, input, and result rendering
 
 Weed.Core
-  查询路由、排序、历史记录、配置模型、插件注册表
+  Query routing, ranking, history, configuration, logging, and update checks
 
 Weed.PluginHost
-  manifest 扫描、AssemblyLoadContext、插件生命周期、异常隔离
+  External manifest scanning, load contexts, lifecycle, import, and diagnostics
 
 Weed.Abstractions
-  插件 SDK：接口、DTO、manifest 类型、权限和结果模型
+  Public plugin SDK interfaces, DTOs, manifests, permissions, and result models
 
 Weed.Platform.Windows
-  全局热键、Win32 interop、Shell 启动、剪切板、截屏、窗口服务
+  Global hotkeys, Shell integration, clipboard, capture, startup, and Win32 interop
 
-First-party Plugins
-  AppLauncher、Calculator、Clipboard、Screenshot、Emoji、Translator、FileSearch、RunCommand
+Built-In Plugins
+  AppLauncher, Calculator, Clipboard, Screenshot, Emoji, Translator, FileSearch,
+  and RunCommand
 ```
 
-## 项目职责
+## Project Responsibilities
 
 ### Weed.App
 
-- 启动应用和依赖注入容器。
-- 创建主搜索窗口、设置窗口、托盘入口和插件面板。
-- 处理 `Alt+Space` 唤起、焦点管理、窗口动画和键盘导航。
-- 渲染插件返回的结构化结果。
-- 管理主题 token、图标资源和 UI 状态。
+- Starts the application and composes shared services.
+- Creates the launcher, settings window, tray menu, and plugin detail pages.
+- Handles `Alt+Space`, focus, visibility, keyboard navigation, and single-instance activation.
+- Renders structured plugin results, actions, icons, and previews.
+- Applies theme resources and owns UI state.
 
 ### Weed.Core
 
-- 加载全局配置和用户配置。
-- 维护插件注册表、入口注册表和用户历史。
-- 实现 Keyword、Hotkey、ImplicitQuery 路由。
-- 计算无前缀查询排序分。
-- 记录用户选择行为。
-- 提供查询取消、结果合并和增量刷新机制。
+- Loads and persists application, hotkey, and plugin settings.
+- Routes Keyword, Hotkey, and ImplicitQuery activations.
+- Combines plugin match scores with usage history and user priority.
+- Records successful result actions.
+- Provides logging, storage paths, text normalization, and update checks.
+- Cancels previous queries when input changes.
 
 ### Weed.PluginHost
 
-- 扫描插件目录和 manifest。
-- 校验 manifest、SDK 版本和入口类型。
-- 为每个外部插件创建独立 `AssemblyLoadContext`。
-- 启动、停止和卸载插件。
-- 捕获插件异常并记录诊断信息。
-- 将 Host 服务以受控接口传给插件。
+- Registers first-party plugins supplied by the application.
+- Scans the user plugin directory for external manifests.
+- Validates SDK versions, assemblies, entry types, and package boundaries.
+- Creates an `AssemblyLoadContext` for each external plugin.
+- Starts, stops, and disposes plugin lifecycles.
+- Isolates plugin exceptions at dispatch boundaries and records diagnostics.
+- Imports ZIP, DLL, published folder, and source-folder plugins.
 
 ### Weed.Abstractions
 
-- 定义插件需要引用的稳定接口。
-- 定义查询、结果、动作、快捷键、设置和权限 DTO。
-- 避免依赖 WPF、Win32 具体实现和 Host 内部类型。
-- 作为插件兼容性的主契约。
+- Defines the interfaces external plugins compile against.
+- Defines manifests, query and command contexts, results, actions, settings, and permissions.
+- Avoids dependencies on WPF, Win32 implementations, or Host-internal types.
+- Acts as the primary plugin compatibility contract.
 
 ### Weed.Platform.Windows
 
-- 注册和注销全局热键。
-- 解析开始菜单快捷方式。
-- 通过 Shell 打开程序和文件。
-- 提供剪切板读写辅助。
-- 提供屏幕、窗口、截图和多显示器能力。
-- 封装 Win32 句柄、消息和 DPI 相关细节。
+- Registers and unregisters global hotkeys.
+- Resolves Start Menu shortcuts and launches Shell targets.
+- Reads and writes clipboard formats and pastes into foreground windows.
+- Captures regions, displays, and scrolling areas.
+- Manages launch-at-startup and external program dependencies.
+- Encapsulates handles, messages, DPI, displays, and other Win32 details.
 
-## 启动流程
+## Startup Flow
 
 ```text
-Process start
-  -> Load app configuration
-  -> Initialize logging
-  -> Initialize storage
-  -> Load plugin manifests
-  -> Initialize enabled plugins
+Process starts
+  -> Acquire the single-instance lock or activate the existing instance
+  -> Create paths, logging, settings, storage, and platform services
+  -> Register built-in plugins
+  -> Scan the external plugin directory
+  -> Load plugin defaults and user enablement
+  -> Initialize enabled plugins and start resident plugins
+  -> Check and start declared external dependencies
   -> Register global hotkeys
-  -> Warm first-party indexes
-  -> Show tray and wait for activation
+  -> Show the tray icon and optionally the launcher
+  -> Check for updates when enabled
 ```
 
-## 查询流程
+Shutdown reverses this order: hotkeys are unregistered, resident plugins stop, plugin instances are disposed, and logging is flushed.
+
+## Query Flow
 
 ```text
-User opens Weed
-  -> User types query
-  -> Core normalizes text
-  -> Router selects activation path
-  -> Matching plugins receive QueryContext
+User opens Weed and types
+  -> Core normalizes the input
+  -> Router selects Keyword or ImplicitQuery activations
+  -> Matching enabled plugins receive QueryContext
   -> Plugins return structured results
-  -> Core applies usage score and priority score
-  -> App renders ranked results
+  -> Core adds usage and priority scores
+  -> Results are sorted and rendered
 ```
 
-## 命令流程
+Each input change cancels the previous query token. Plugins should honor cancellation promptly and avoid blocking the UI thread.
+
+## Command Flow
 
 ```text
-User selects result or presses hotkey
+User activates a result or hotkey
   -> Core resolves CommandContext
-  -> PluginHost dispatches command
-  -> Plugin executes action through Host services
-  -> Core records usage
-  -> App updates or closes UI according to command result
+  -> Plugin runtime dispatches the command
+  -> Plugin uses Host services for platform actions
+  -> Successful execution updates usage history
+  -> CommandBehavior decides whether to hide, keep, or reopen the launcher
 ```
 
-## 配置层级
-
-配置按以下顺序合并：
+## Configuration Precedence
 
 ```text
-Built-in defaults
-  -> Plugin manifest defaults
-  -> User settings
-  -> Session overrides
+Code and manifest defaults
+  -> Persisted user settings
+  -> Current session state
 ```
 
-用户设置拥有最高持久化优先级。插件更新时保留用户对快捷键、启用状态和优先级的配置。
+User choices are authoritative for plugin enablement, hotkeys, priorities, and plugin settings. New plugin versions may add defaults but should not overwrite existing values.
 
-## 插件目录
+## Plugin Locations
 
-默认插件目录：
+First-party plugins are referenced by `Weed.App` and published with the application. External plugins are installed under:
 
 ```text
-%LOCALAPPDATA%\Weed\plugins
+%LOCALAPPDATA%\Weed\plugins\<plugin-id>
 ```
 
-第一方插件由 `Weed.App` 直接引用并随应用发布。用户安装的外部插件位于用户插件目录，并在下次启动时扫描加载。
+They are scanned during the next application startup.
 
-## 日志和诊断
+## Logging and Diagnostics
 
-- Host 日志记录启动、插件加载、快捷键注册、查询错误和命令执行错误。
-- 每个插件使用独立日志作用域。
-- 插件异常包含插件 ID、版本、入口、命令名和查询文本摘要。
-- 设置页提供插件诊断入口，用于查看状态、启停记录和最近错误。
+- Host logs cover startup, shutdown, plugin loading, hotkey registration, dependency startup, query failures, command failures, and unhandled exceptions.
+- Plugin log messages include plugin identity through a scoped logger.
+- Settings exposes plugin manifest data, permissions, external dependencies, and recent log output.
+- Logs must avoid raw sensitive query content, credentials, and unnecessary clipboard data.
 
-## 响应性要求
+## Responsiveness Rules
 
-- UI 线程只处理输入、渲染和轻量状态更新。
-- 插件查询、索引、剪切板写入和截图处理在后台任务中执行。
-- 输入变化时，旧查询的 `CancellationToken` 会被触发。
-- 首批结果可先显示，后续结果增量刷新。
+- The UI thread handles input, rendering, and lightweight state only.
+- Queries, indexing, clipboard persistence, image processing, and network operations run asynchronously.
+- Cancellation is propagated through `CancellationToken`.
+- Plugins should return bounded result sets and avoid expensive work for inputs they cannot match.
+- Preview and icon loading must not change result-row dimensions or block typing.
